@@ -3,51 +3,23 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-
-// Sample medication data
-const SAMPLE_MEDICATIONS = [
-  {
-    id: "1",
-    name: "Aspirin",
-    dosage: "100mg",
-    frequency: "Twice daily",
-    time: "08:00, 20:00",
-    color: "#4CAF50",
-    refillDate: "2024-02-15",
-    remainingPills: 15,
-  },
-  {
-    id: "2",
-    name: "Vitamin D",
-    dosage: "1000 IU",
-    frequency: "Once daily",
-    time: "09:00",
-    color: "#2196F3",
-    refillDate: "2024-03-01",
-    remainingPills: 28,
-  },
-  {
-    id: "3",
-    name: "Metformin",
-    dosage: "500mg",
-    frequency: "Three times daily",
-    time: "08:00, 14:00, 20:00",
-    color: "#FF9800",
-    refillDate: "2024-02-20",
-    remainingPills: 8,
-  },
-];
+import { useMedicationStore } from "../../../store/medication";
 
 export default function MedicationScreen() {
   const router = useRouter();
-  const [medications, setMedications] = useState(SAMPLE_MEDICATIONS);
+  const { medications, fetchMedications, deleteMedication, loading, error } =
+    useMedicationStore();
+
+  useEffect(() => {
+    fetchMedications();
+  }, [fetchMedications]);
 
   const handleAddMedication = () => {
     router.push("/(tabs)/(medication)/add-medication");
@@ -71,15 +43,53 @@ export default function MedicationScreen() {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            setMedications(medications.filter((m) => m.id !== medication.id));
+            deleteMedication(medication.id);
           },
         },
       ]
     );
   };
 
+  const renderMedication = ({ item: medication }: { item: any }) => (
+    <View key={medication.id} style={styles.medicationCard}>
+      <View
+        style={[
+          styles.medicationBadge,
+          { backgroundColor: `${medication.color}15` },
+        ]}
+      >
+        <Ionicons name="medical" size={24} color={medication.color} />
+      </View>
+      <View style={styles.medicationInfo}>
+        <Text style={styles.medicationName}>{medication.name}</Text>
+        <Text style={styles.medicationDosage}>
+          {medication.dosage} • {medication.frequency || ""}
+        </Text>
+        <Text style={styles.medicationTime}>
+          <Ionicons name="time-outline" size={14} color="#666" />{" "}
+          {medication.times?.join(", ")}
+        </Text>
+        {/* Add refill info if available */}
+      </View>
+      <View style={styles.medicationActions}>
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => handleEditMedication(medication)}
+        >
+          <Ionicons name="pencil" size={16} color="#2196F3" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleDeleteMedication(medication)}
+        >
+          <Ionicons name="trash" size={16} color="#F44336" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
       <LinearGradient colors={["#1a8e2d", "#146922"]} style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Medications</Text>
@@ -122,7 +132,11 @@ export default function MedicationScreen() {
         {/* Medications List */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Medications</Text>
-          {medications.length === 0 ? (
+          {loading ? (
+            <Text>Loading...</Text>
+          ) : error ? (
+            <Text style={{ color: "red" }}>{error}</Text>
+          ) : medications.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="medical-outline" size={48} color="#ccc" />
               <Text style={styles.emptyStateText}>
@@ -138,51 +152,16 @@ export default function MedicationScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            medications.map((medication) => (
-              <View key={medication.id} style={styles.medicationCard}>
-                <View
-                  style={[
-                    styles.medicationBadge,
-                    { backgroundColor: `${medication.color}15` },
-                  ]}
-                >
-                  <Ionicons name="medical" size={24} color={medication.color} />
-                </View>
-                <View style={styles.medicationInfo}>
-                  <Text style={styles.medicationName}>{medication.name}</Text>
-                  <Text style={styles.medicationDosage}>
-                    {medication.dosage} • {medication.frequency}
-                  </Text>
-                  <Text style={styles.medicationTime}>
-                    <Ionicons name="time-outline" size={14} color="#666" />{" "}
-                    {medication.time}
-                  </Text>
-                  <Text style={styles.refillInfo}>
-                    <Ionicons name="calendar-outline" size={14} color="#666" />{" "}
-                    Refill: {medication.refillDate} •{" "}
-                    {medication.remainingPills} pills left
-                  </Text>
-                </View>
-                <View style={styles.medicationActions}>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => handleEditMedication(medication)}
-                  >
-                    <Ionicons name="pencil" size={16} color="#2196F3" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => handleDeleteMedication(medication)}
-                  >
-                    <Ionicons name="trash" size={16} color="#F44336" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
+            <FlatList
+              data={medications}
+              renderItem={renderMedication}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: 40 }}
+            />
           )}
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 

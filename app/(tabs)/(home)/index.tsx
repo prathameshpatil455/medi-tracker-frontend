@@ -15,6 +15,8 @@ import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
+import { useMedicationStore } from "../../../store/medication";
+import React from "react";
 
 const { width } = Dimensions.get("window");
 
@@ -46,37 +48,6 @@ const QUICK_ACTIONS = [
     route: "/(tabs)/(medication)/refill-tracker" as const,
     color: "#E64A19",
     gradient: ["#FF5722", "#E64A19"] as [string, string],
-  },
-];
-
-// Sample medication data for demonstration
-const SAMPLE_MEDICATIONS = [
-  {
-    id: "1",
-    name: "Aspirin",
-    dosage: "100mg",
-    times: ["08:00", "20:00"],
-    color: "#4CAF50",
-    taken: false,
-    nextDose: "20:00",
-  },
-  {
-    id: "2",
-    name: "Vitamin D",
-    dosage: "1000 IU",
-    times: ["09:00"],
-    color: "#2196F3",
-    taken: true,
-    nextDose: "09:00",
-  },
-  {
-    id: "3",
-    name: "Metformin",
-    dosage: "500mg",
-    times: ["08:00", "14:00", "20:00"],
-    color: "#FF9800",
-    taken: false,
-    nextDose: "14:00",
   },
 ];
 
@@ -193,12 +164,15 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
       <View style={styles.medicationDetails}>
         <View style={styles.timeInfo}>
           <Ionicons name="time-outline" size={16} color="#666" />
-          <Text style={styles.timeText}>Next: {item.nextDose}</Text>
+          <Text style={styles.timeText}>
+            Next: {item.nextDose || item.times?.[0]}
+          </Text>
         </View>
         <View style={styles.frequencyInfo}>
           <Ionicons name="repeat-outline" size={16} color="#666" />
           <Text style={styles.frequencyText}>
-            {item.times.length} time{item.times.length > 1 ? "s" : ""} daily
+            {item.times?.length || 0} time{item.times?.length > 1 ? "s" : ""}{" "}
+            daily
           </Text>
         </View>
       </View>
@@ -209,41 +183,45 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
 export default function HomeScreen() {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [medications, setMedications] = useState(SAMPLE_MEDICATIONS);
-  const [completedDoses, setCompletedDoses] = useState(2);
+  const [completedDoses, setCompletedDoses] = useState(0);
+  const { loading, error, medications, fetchTodaysMedications } =
+    useMedicationStore();
 
-  // Use useEffect for initial load
+  console.log(medications, "check here");
+
+  // Fetch today's medications on mount and focus
   useEffect(() => {
-    // Load sample data
-    console.log("Home screen loaded");
+    fetchTodaysMedications();
   }, []);
 
-  // Use useFocusEffect for subsequent updates
-  useFocusEffect(() => {
-    console.log("Home screen focused");
-    return () => {
-      // Cleanup if needed
-    };
-  });
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchTodaysMedications();
+    }, [fetchTodaysMedications])
+  );
+
+  // Calculate completed doses (example: count medications with taken=true)
+  useEffect(() => {
+    // Dose tracking is not implemented in Medication type; set to 0 or use a placeholder
+    setCompletedDoses(0);
+  }, [medications]);
+
+  // Calculate progress (example: completed doses / total doses)
+  const totalDoses = medications.length; // Adjust if you have more accurate dose info
+  const progress = totalDoses > 0 ? completedDoses / totalDoses : 0;
 
   const handleTakeDose = async (medication: any) => {
     try {
       Alert.alert("Dose Recorded", `${medication.name} dose marked as taken!`);
       setCompletedDoses((prev) => prev + 1);
-      // Update medication status
-      setMedications((prev) =>
-        prev.map((med) =>
-          med.id === medication.id ? { ...med, taken: true } : med
-        )
-      );
+      // Optionally, call an API to record the dose here
+      // Optionally, refetch today's medications
+      // fetchTodaysMedications();
     } catch (error) {
       console.error("Error recording dose:", error);
       Alert.alert("Error", "Failed to record dose. Please try again.");
     }
   };
-
-  const progress =
-    medications.length > 0 ? completedDoses / (medications.length * 2) : 0;
 
   const renderMedicationItem = ({ item }: { item: any }) => (
     <MedicationItem item={item} onTakeDose={handleTakeDose} />
@@ -313,7 +291,7 @@ export default function HomeScreen() {
 
           <CircularProgress
             progress={progress}
-            totalDoses={medications.length * 2}
+            totalDoses={totalDoses}
             completedDoses={completedDoses}
           />
         </View>
@@ -345,6 +323,8 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        refreshing={loading}
+        onRefresh={fetchTodaysMedications}
       />
 
       <Modal
@@ -377,7 +357,7 @@ export default function HomeScreen() {
                     {medication.dosage}
                   </Text>
                   <Text style={styles.notificationTime}>
-                    {medication.times[0]}
+                    {medication.times?.[0]}
                   </Text>
                 </View>
               </View>
@@ -385,6 +365,11 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+      {error && (
+        <View style={{ padding: 16, backgroundColor: "#ffebee" }}>
+          <Text style={{ color: "#c62828" }}>Error: {error}</Text>
+        </View>
+      )}
     </View>
   );
 }

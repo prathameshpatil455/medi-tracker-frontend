@@ -60,7 +60,7 @@ function RootLayoutNav() {
         screenOptions={{
           headerShown: false,
         }}
-        initialRouteName="(tabs)"
+        initialRouteName="(auth)"
       ></Stack>
     </ThemeProvider>
   );

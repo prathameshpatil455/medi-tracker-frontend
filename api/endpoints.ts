@@ -17,35 +17,14 @@ export const ENDPOINTS = {
     CHANGE_PASSWORD: "/api/user/change-password",
   },
 
-  // Transaction endpoints
-  TRANSACTIONS: {
-    LIST: "/api/transactions",
-    CREATE: "/api/transactions",
-    UPDATE: (id: string) => `/api/transactions/${id}`,
-    DELETE: (id: string) => `/api/transactions/${id}`,
-    SUMMARY: {
-      CARDS: "/api/transactions/summary/cards",
-      TRENDS: (range: "weekly" | "monthly" | "yearly") =>
-        `/api/transactions/summary/trends?range=${range}`,
-      CATEGORIES: "/api/transactions/summary/categories",
-    },
-  },
-
-  // Category endpoints
-  CATEGORIES: {
-    LIST: "/api/categories",
-    CREATE: "/api/categories",
-    UPDATE: (id: string) => `/api/categories/${id}`,
-    DELETE: (id: string) => `/api/categories/${id}`,
-  },
-
-  // Budget endpoints
-  BUDGETS: {
-    LIST: "/api/budgets",
-    CREATE: "/api/budgets",
-    UPDATE: (id: string) => `/api/budgets/${id}`,
-    DELETE: (id: string) => `/api/budgets/${id}`,
-    DETAILS: (id: string) => `/api/budgets/${id}`,
+  MEDICINE: {
+    GET_ALL: "/api/medicines",
+    GET_TODAY: "/api/medicines/today",
+    ADD_MEDICINE: "/api/medicines",
+    GET_MONTHLY: "/api/medicines/month",
+    GET_UPCOMING: "/api/medicines/upcoming",
+    GET_REFILL_WARNING: "/api/medicines/refill-warning",
+    GET_PROGRESS_SUMMARY: "/api/medicines/progress/summary",
   },
 
   // Reports endpoints

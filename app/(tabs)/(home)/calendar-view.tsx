@@ -1,169 +1,241 @@
-import { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
+  ScrollView,
+  Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  getMedications,
+  getDoseHistory,
+  recordDose,
+  Medication,
+  DoseHistory,
+} from "../../../utils/storage";
+import { useFocusEffect } from "@react-navigation/native";
 
-// Sample calendar data
-const SAMPLE_CALENDAR_DATA = [
-  {
-    date: "2024-02-01",
-    day: "Thu",
-    dayNumber: "1",
-    medications: [
-      { name: "Aspirin", time: "08:00", taken: true },
-      { name: "Vitamin D", time: "09:00", taken: true },
-      { name: "Aspirin", time: "20:00", taken: false },
-    ],
-  },
-  {
-    date: "2024-02-02",
-    day: "Fri",
-    dayNumber: "2",
-    medications: [
-      { name: "Aspirin", time: "08:00", taken: false },
-      { name: "Vitamin D", time: "09:00", taken: false },
-      { name: "Metformin", time: "14:00", taken: false },
-      { name: "Aspirin", time: "20:00", taken: false },
-    ],
-  },
-  {
-    date: "2024-02-03",
-    day: "Sat",
-    dayNumber: "3",
-    medications: [
-      { name: "Aspirin", time: "08:00", taken: false },
-      { name: "Vitamin D", time: "09:00", taken: false },
-      { name: "Metformin", time: "14:00", taken: false },
-      { name: "Aspirin", time: "20:00", taken: false },
-    ],
-  },
-];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default function CalendarViewScreen() {
+export default function CalendarScreen() {
   const router = useRouter();
-  const [selectedDate, setSelectedDate] = useState("2024-02-02");
-  const [calendarData] = useState(SAMPLE_CALENDAR_DATA);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [doseHistory, setDoseHistory] = useState<DoseHistory[]>([]);
 
-  const selectedDayData = calendarData.find((day) => day.date === selectedDate);
+  const loadData = useCallback(async () => {
+    try {
+      const [meds, history] = await Promise.all([
+        getMedications(),
+        getDoseHistory(),
+      ]);
+      setMedications(meds);
+      setDoseHistory(history);
+    } catch (error) {
+      console.error("Error loading calendar data:", error);
+    }
+  }, [selectedDate]);
 
-  const handleTakeDose = (medication: any) => {
-    // In a real app, you'd update the medication status
-    console.log(`Marked ${medication.name} as taken`);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const days = new Date(year, month + 1, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    return { days, firstDay };
+  };
+
+  const { days, firstDay } = getDaysInMonth(selectedDate);
+
+  const renderCalendar = () => {
+    const calendar: JSX.Element[] = [];
+    let week: JSX.Element[] = [];
+
+    // Add empty cells for days before the first day of the month
+    for (let i = 0; i < firstDay; i++) {
+      week.push(<View key={`empty-${i}`} style={styles.calendarDay} />);
+    }
+
+    // Add days of the month
+    for (let day = 1; day <= days; day++) {
+      const date = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        day
+      );
+      const isToday = new Date().toDateString() === date.toDateString();
+      const hasDoses = doseHistory.some(
+        (dose) =>
+          new Date(dose.timestamp).toDateString() === date.toDateString()
+      );
+
+      week.push(
+        <TouchableOpacity
+          key={day}
+          style={[
+            styles.calendarDay,
+            isToday && styles.today,
+            hasDoses && styles.hasEvents,
+          ]}
+          onPress={() => setSelectedDate(date)}
+        >
+          <Text style={[styles.dayText, isToday && styles.todayText]}>
+            {day}
+          </Text>
+          {hasDoses && <View style={styles.eventDot} />}
+        </TouchableOpacity>
+      );
+
+      if ((firstDay + day) % 7 === 0 || day === days) {
+        calendar.push(
+          <View key={day} style={styles.calendarWeek}>
+            {week}
+          </View>
+        );
+        week = [];
+      }
+    }
+
+    return calendar;
+  };
+
+  const renderMedicationsForDate = () => {
+    const dateStr = selectedDate.toDateString();
+    const dayDoses = doseHistory.filter(
+      (dose) => new Date(dose.timestamp).toDateString() === dateStr
+    );
+
+    return medications.map((medication) => {
+      const taken = dayDoses.some(
+        (dose) => dose.medicationId === medication.id && dose.taken
+      );
+
+      return (
+        <View key={medication.id} style={styles.medicationCard}>
+          <View
+            style={[
+              styles.medicationColor,
+              { backgroundColor: medication.color },
+            ]}
+          />
+          <View style={styles.medicationInfo}>
+            <Text style={styles.medicationName}>{medication.name}</Text>
+            <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+            <Text style={styles.medicationTime}>{medication.times[0]}</Text>
+          </View>
+          {taken ? (
+            <View style={styles.takenBadge}>
+              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+              <Text style={styles.takenText}>Taken</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.takeDoseButton,
+                { backgroundColor: medication.color },
+              ]}
+              onPress={async () => {
+                await recordDose(medication.id, true, new Date().toISOString());
+                loadData();
+              }}
+            >
+              <Text style={styles.takeDoseText}>Take</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    });
   };
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={["#1a8e2d", "#146922"]} style={styles.header}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Calendar View</Text>
-          <View style={styles.placeholder} />
-        </View>
-      </LinearGradient>
+      <LinearGradient
+        colors={["#1a8e2d", "#146922"]}
+        style={styles.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+      />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Calendar Grid */}
-        <View style={styles.calendarSection}>
-          <Text style={styles.sectionTitle}>February 2024</Text>
-          <View style={styles.calendarGrid}>
-            {calendarData.map((day) => (
-              <TouchableOpacity
-                key={day.date}
-                style={[
-                  styles.calendarDay,
-                  selectedDate === day.date && styles.selectedDay,
-                ]}
-                onPress={() => setSelectedDate(day.date)}
-              >
-                <Text
-                  style={[
-                    styles.dayLabel,
-                    selectedDate === day.date && styles.selectedDayText,
-                  ]}
-                >
-                  {day.day}
-                </Text>
-                <Text
-                  style={[
-                    styles.dayNumber,
-                    selectedDate === day.date && styles.selectedDayText,
-                  ]}
-                >
-                  {day.dayNumber}
-                </Text>
-                <View style={styles.medicationDots}>
-                  {day.medications.map((med, index) => (
-                    <View
-                      key={index}
-                      style={[
-                        styles.dot,
-                        med.taken ? styles.takenDot : styles.pendingDot,
-                      ]}
-                    />
-                  ))}
-                </View>
-              </TouchableOpacity>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
+            <Ionicons name="chevron-back" size={28} color="#1a8e2d" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Calendar</Text>
+        </View>
+
+        <View style={styles.calendarContainer}>
+          <View style={styles.monthHeader}>
+            <TouchableOpacity
+              onPress={() =>
+                setSelectedDate(
+                  new Date(
+                    selectedDate.getFullYear(),
+                    selectedDate.getMonth() - 1,
+                    1
+                  )
+                )
+              }
+            >
+              <Ionicons name="chevron-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.monthText}>
+              {selectedDate.toLocaleString("default", {
+                month: "long",
+                year: "numeric",
+              })}
+            </Text>
+            <TouchableOpacity
+              onPress={() =>
+                setSelectedDate(
+                  new Date(
+                    selectedDate.getFullYear(),
+                    selectedDate.getMonth() + 1,
+                    1
+                  )
+                )
+              }
+            >
+              <Ionicons name="chevron-forward" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.weekdayHeader}>
+            {WEEKDAYS.map((day) => (
+              <Text key={day} style={styles.weekdayText}>
+                {day}
+              </Text>
             ))}
           </View>
+
+          {renderCalendar()}
         </View>
 
-        {/* Selected Day Details */}
-        {selectedDayData && (
-          <View style={styles.dayDetailsSection}>
-            <Text style={styles.dayDetailsTitle}>
-              {selectedDayData.day}, February {selectedDayData.dayNumber}
-            </Text>
-            {selectedDayData.medications.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Ionicons name="calendar-outline" size={48} color="#ccc" />
-                <Text style={styles.emptyStateText}>
-                  No medications scheduled for this day
-                </Text>
-              </View>
-            ) : (
-              selectedDayData.medications.map((medication, index) => (
-                <View key={index} style={styles.medicationItem}>
-                  <View style={styles.medicationInfo}>
-                    <Text style={styles.medicationName}>{medication.name}</Text>
-                    <Text style={styles.medicationTime}>{medication.time}</Text>
-                  </View>
-                  <View style={styles.medicationStatus}>
-                    {medication.taken ? (
-                      <View style={styles.takenBadge}>
-                        <Ionicons
-                          name="checkmark-circle"
-                          size={20}
-                          color="#4CAF50"
-                        />
-                        <Text style={styles.takenText}>Taken</Text>
-                      </View>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.takeButton}
-                        onPress={() => handleTakeDose(medication)}
-                      >
-                        <Text style={styles.takeButtonText}>Take</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-      </ScrollView>
+        <View style={styles.scheduleContainer}>
+          <Text style={styles.scheduleTitle}>
+            {selectedDate.toLocaleDateString("default", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {renderMedicationsForDate()}
+          </ScrollView>
+        </View>
+      </View>
     </View>
   );
 }
@@ -173,118 +245,146 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8f9fa",
   },
-  header: {
-    paddingTop: 50,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-  },
-  backButton: {
-    padding: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 12,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "white",
-  },
-  placeholder: {
-    width: 40,
+  headerGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: Platform.OS === "ios" ? 140 : 120,
   },
   content: {
     flex: 1,
-    paddingTop: 20,
+    paddingTop: Platform.OS === "ios" ? 50 : 30,
   },
-  calendarSection: {
-    paddingHorizontal: 20,
-    marginBottom: 25,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 15,
-  },
-  calendarGrid: {
+  header: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  calendarDay: {
-    width: (350 - 32) / 7,
-    aspectRatio: 1,
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 8,
     alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    zIndex: 1,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "white",
     justifyContent: "center",
+    alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
-  selectedDay: {
-    backgroundColor: "#1a8e2d",
-  },
-  dayLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 2,
-  },
-  dayNumber: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 4,
-  },
-  selectedDayText: {
-    color: "white",
-  },
-  medicationDots: {
-    flexDirection: "row",
-    gap: 2,
-  },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  takenDot: {
-    backgroundColor: "#4CAF50",
-  },
-  pendingDot: {
-    backgroundColor: "#FF9800",
-  },
-  dayDetailsSection: {
-    paddingHorizontal: 20,
-  },
-  dayDetailsTitle: {
-    fontSize: 18,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: "700",
-    color: "#1a1a1a",
-    marginBottom: 15,
+    color: "white",
+    marginLeft: 15,
   },
-  medicationItem: {
-    flexDirection: "row",
-    alignItems: "center",
+  calendarContainer: {
     backgroundColor: "white",
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    margin: 20,
+    padding: 15,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
+  },
+  monthHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  monthText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+  },
+  weekdayHeader: {
+    flexDirection: "row",
+    marginBottom: 10,
+  },
+  weekdayText: {
+    flex: 1,
+    textAlign: "center",
+    color: "#666",
+    fontWeight: "500",
+  },
+  calendarWeek: {
+    flexDirection: "row",
+    marginBottom: 5,
+  },
+  calendarDay: {
+    flex: 1,
+    aspectRatio: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  dayText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  today: {
+    backgroundColor: "#1a8e2d15",
+  },
+  todayText: {
+    color: "#1a8e2d",
+    fontWeight: "600",
+  },
+  hasEvents: {
+    position: "relative",
+  },
+  eventDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#1a8e2d",
+    position: "absolute",
+    bottom: "15%",
+  },
+  scheduleContainer: {
+    flex: 1,
+    backgroundColor: "white",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  scheduleTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 15,
+  },
+  medicationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  medicationColor: {
+    width: 12,
+    height: 40,
+    borderRadius: 6,
+    marginRight: 15,
   },
   medicationInfo: {
     flex: 1,
@@ -295,12 +395,24 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 4,
   },
+  medicationDosage: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 2,
+  },
   medicationTime: {
     fontSize: 14,
     color: "#666",
   },
-  medicationStatus: {
-    marginLeft: 15,
+  takeDoseButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 12,
+  },
+  takeDoseText: {
+    color: "white",
+    fontWeight: "600",
+    fontSize: 14,
   },
   takenBadge: {
     flexDirection: "row",
@@ -315,27 +427,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
     marginLeft: 4,
-  },
-  takeButton: {
-    backgroundColor: "#1a8e2d",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  takeButtonText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  emptyState: {
-    alignItems: "center",
-    padding: 30,
-    backgroundColor: "white",
-    borderRadius: 16,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: "#666",
-    marginTop: 10,
   },
 });
