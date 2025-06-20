@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,151 +10,152 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  getMedications,
-  getDoseHistory,
-  recordDose,
-  Medication,
-  DoseHistory,
-} from "../../../utils/storage";
+import { useMedicationStore } from "../../../store/medication";
 import { useFocusEffect } from "@react-navigation/native";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function getDaysInMonth(year: number, month: number) {
+  const days = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  return { days, firstDay };
+}
+
+function toLocalYMD(dateStr) {
+  const d = new Date(dateStr);
+  // 'en-CA' gives YYYY-MM-DD
+  return d.toLocaleDateString("en-CA");
+}
+
 export default function CalendarScreen() {
   const router = useRouter();
+  const today = new Date();
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [medications, setMedications] = useState<Medication[]>([]);
-  const [doseHistory, setDoseHistory] = useState<DoseHistory[]>([]);
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
+  const medications = useMedicationStore((state) => state.medications);
+  const { fetchMonthlyMedications, loading, error } = useMedicationStore();
 
-  const loadData = useCallback(async () => {
-    try {
-      const [meds, history] = await Promise.all([
-        getMedications(),
-        getDoseHistory(),
-      ]);
-      setMedications(meds);
-      setDoseHistory(history);
-    } catch (error) {
-      console.error("Error loading calendar data:", error);
+  // Fetch monthly meds on mount and when month/year changes
+  useEffect(() => {
+    fetchMonthlyMedications(calendarYear, calendarMonth + 1);
+  }, [calendarYear, calendarMonth, fetchMonthlyMedications]);
+
+  // When month changes, reset selectedDate to first of month if not in current month
+  useEffect(() => {
+    if (
+      selectedDate.getFullYear() !== calendarYear ||
+      selectedDate.getMonth() !== calendarMonth
+    ) {
+      setSelectedDate(new Date(calendarYear, calendarMonth, 1));
     }
-  }, [selectedDate]);
+  }, [calendarYear, calendarMonth]);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [loadData])
-  );
-
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const days = new Date(year, month + 1, 0).getDate();
-    const firstDay = new Date(year, month, 1).getDay();
-    return { days, firstDay };
-  };
-
-  const { days, firstDay } = getDaysInMonth(selectedDate);
-
-  const renderCalendar = () => {
-    const calendar: JSX.Element[] = [];
-    let week: JSX.Element[] = [];
-
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < firstDay; i++) {
-      week.push(<View key={`empty-${i}`} style={styles.calendarDay} />);
+  // Calendar grid
+  const { days, firstDay } = getDaysInMonth(calendarYear, calendarMonth);
+  const weeks: (Date | null)[][] = [];
+  let week: (Date | null)[] = [];
+  // Fill initial empty days
+  for (let i = 0; i < firstDay; i++) week.push(null);
+  for (let day = 1; day <= days; day++) {
+    week.push(new Date(calendarYear, calendarMonth, day));
+    if (week.length === 7) {
+      weeks.push(week);
+      week = [];
     }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
+  }
 
-    // Add days of the month
-    for (let day = 1; day <= days; day++) {
-      const date = new Date(
-        selectedDate.getFullYear(),
-        selectedDate.getMonth(),
-        day
-      );
-      const isToday = new Date().toDateString() === date.toDateString();
-      const hasDoses = doseHistory.some(
-        (dose) =>
-          new Date(dose.timestamp).toDateString() === date.toDateString()
-      );
+  // Filter medications for selected day
+  const selectedDayStr = selectedDate.toISOString().split("T")[0];
+  const medsForDay = medications.filter((med) => {
+    const medStart = toLocalYMD(med.startDate);
+    const medEnd = med.endDate ? toLocalYMD(med.endDate) : null;
+    const selectedYMD = toLocalYMD(selectedDate);
+    return medStart <= selectedYMD && (!medEnd || selectedYMD <= medEnd);
+  });
 
-      week.push(
-        <TouchableOpacity
-          key={day}
-          style={[
-            styles.calendarDay,
-            isToday && styles.today,
-            hasDoses && styles.hasEvents,
-          ]}
-          onPress={() => setSelectedDate(date)}
-        >
-          <Text style={[styles.dayText, isToday && styles.todayText]}>
+  // Render calendar grid
+  const renderCalendar = () => (
+    <View>
+      <View style={styles.weekdayHeader}>
+        {WEEKDAYS.map((day) => (
+          <Text key={day} style={styles.weekdayText}>
             {day}
           </Text>
-          {hasDoses && <View style={styles.eventDot} />}
-        </TouchableOpacity>
-      );
+        ))}
+      </View>
+      {weeks.map((week, i) => (
+        <View key={i} style={styles.calendarWeek}>
+          {week.map((date, j) => {
+            const isToday =
+              date && date.toDateString() === today.toDateString();
+            const isSelected =
+              date && date.toDateString() === selectedDate.toDateString();
+            return (
+              <TouchableOpacity
+                key={j}
+                style={[
+                  styles.calendarDay,
+                  isToday && styles.today,
+                  isSelected && styles.selectedDay,
+                ]}
+                disabled={!date}
+                onPress={() => date && setSelectedDate(date)}
+              >
+                <Text
+                  style={[
+                    styles.dayText,
+                    isToday && styles.todayText,
+                    isSelected && styles.selectedDayText,
+                  ]}
+                >
+                  {date ? date.getDate() : ""}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
 
-      if ((firstDay + day) % 7 === 0 || day === days) {
-        calendar.push(
-          <View key={day} style={styles.calendarWeek}>
-            {week}
-          </View>
-        );
-        week = [];
-      }
-    }
-
-    return calendar;
-  };
-
-  const renderMedicationsForDate = () => {
-    const dateStr = selectedDate.toDateString();
-    const dayDoses = doseHistory.filter(
-      (dose) => new Date(dose.timestamp).toDateString() === dateStr
-    );
-
-    return medications.map((medication) => {
-      const taken = dayDoses.some(
-        (dose) => dose.medicationId === medication.id && dose.taken
-      );
-
-      return (
-        <View key={medication.id} style={styles.medicationCard}>
-          <View
-            style={[
-              styles.medicationColor,
-              { backgroundColor: medication.color },
-            ]}
-          />
-          <View style={styles.medicationInfo}>
-            <Text style={styles.medicationName}>{medication.name}</Text>
-            <Text style={styles.medicationDosage}>{medication.dosage}</Text>
-            <Text style={styles.medicationTime}>{medication.times[0]}</Text>
-          </View>
-          {taken ? (
-            <View style={styles.takenBadge}>
-              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-              <Text style={styles.takenText}>Taken</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
+  // Render medications for selected day
+  const renderMedicationsForDate = () => (
+    <View>
+      {medsForDay.length === 0 ? (
+        <Text style={{ color: "#666", textAlign: "center", marginTop: 20 }}>
+          No medications scheduled for this day
+        </Text>
+      ) : (
+        medsForDay.map((medication) => (
+          <View key={medication.id} style={styles.medicationCard}>
+            <View
               style={[
-                styles.takeDoseButton,
+                styles.medicationColor,
                 { backgroundColor: medication.color },
               ]}
-              onPress={async () => {
-                await recordDose(medication.id, true, new Date().toISOString());
-                loadData();
-              }}
-            >
-              <Text style={styles.takeDoseText}>Take</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      );
-    });
-  };
+            />
+            <View style={styles.medicationInfo}>
+              <Text style={styles.medicationName}>{medication.name}</Text>
+              <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+              <Text style={styles.medicationTime}>
+                {medication.times?.join(", ")}
+              </Text>
+            </View>
+            {/* Placeholder for status: taken/not taken */}
+            <View style={styles.takenBadge}>
+              <Ionicons name="ellipse-outline" size={20} color="#FF9800" />
+              <Text style={styles.takenText}>Not tracked</Text>
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -164,7 +165,6 @@ export default function CalendarScreen() {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
       />
-
       <View style={styles.content}>
         <View style={styles.header}>
           <TouchableOpacity
@@ -175,54 +175,41 @@ export default function CalendarScreen() {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Calendar</Text>
         </View>
-
         <View style={styles.calendarContainer}>
           <View style={styles.monthHeader}>
             <TouchableOpacity
-              onPress={() =>
-                setSelectedDate(
-                  new Date(
-                    selectedDate.getFullYear(),
-                    selectedDate.getMonth() - 1,
-                    1
-                  )
-                )
-              }
+              onPress={() => {
+                if (calendarMonth === 0) {
+                  setCalendarYear(calendarYear - 1);
+                  setCalendarMonth(11);
+                } else {
+                  setCalendarMonth(calendarMonth - 1);
+                }
+              }}
             >
               <Ionicons name="chevron-back" size={24} color="#333" />
             </TouchableOpacity>
             <Text style={styles.monthText}>
-              {selectedDate.toLocaleString("default", {
+              {new Date(calendarYear, calendarMonth).toLocaleString("default", {
                 month: "long",
                 year: "numeric",
               })}
             </Text>
             <TouchableOpacity
-              onPress={() =>
-                setSelectedDate(
-                  new Date(
-                    selectedDate.getFullYear(),
-                    selectedDate.getMonth() + 1,
-                    1
-                  )
-                )
-              }
+              onPress={() => {
+                if (calendarMonth === 11) {
+                  setCalendarYear(calendarYear + 1);
+                  setCalendarMonth(0);
+                } else {
+                  setCalendarMonth(calendarMonth + 1);
+                }
+              }}
             >
               <Ionicons name="chevron-forward" size={24} color="#333" />
             </TouchableOpacity>
           </View>
-
-          <View style={styles.weekdayHeader}>
-            {WEEKDAYS.map((day) => (
-              <Text key={day} style={styles.weekdayText}>
-                {day}
-              </Text>
-            ))}
-          </View>
-
           {renderCalendar()}
         </View>
-
         <View style={styles.scheduleContainer}>
           <Text style={styles.scheduleTitle}>
             {selectedDate.toLocaleDateString("default", {
@@ -260,7 +247,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingVertical: 20,
     zIndex: 1,
   },
   backButton: {
@@ -336,16 +323,12 @@ const styles = StyleSheet.create({
     color: "#1a8e2d",
     fontWeight: "600",
   },
-  hasEvents: {
-    position: "relative",
+  selectedDay: {
+    backgroundColor: "#1a8e2d33",
   },
-  eventDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#1a8e2d",
-    position: "absolute",
-    bottom: "15%",
+  selectedDayText: {
+    color: "#1a8e2d",
+    fontWeight: "bold",
   },
   scheduleContainer: {
     flex: 1,
@@ -403,16 +386,6 @@ const styles = StyleSheet.create({
   medicationTime: {
     fontSize: 14,
     color: "#666",
-  },
-  takeDoseButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 12,
-  },
-  takeDoseText: {
-    color: "white",
-    fontWeight: "600",
-    fontSize: 14,
   },
   takenBadge: {
     flexDirection: "row",

@@ -20,7 +20,7 @@ interface MedicationStore {
   error: string | null;
   fetchMedications: () => Promise<void>;
   fetchTodaysMedications: () => Promise<void>;
-  fetchMonthlyMedications: () => Promise<void>;
+  fetchMonthlyMedications: (year: number, month: number) => Promise<void>;
   fetchUpcomingMedications: () => Promise<void>;
   fetchRefillWarnings: () => Promise<void>;
   fetchProgressSummary: () => Promise<any>;
@@ -57,10 +57,12 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
     }
   },
 
-  fetchMonthlyMedications: async () => {
+  fetchMonthlyMedications: async (year, month) => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_MONTHLY);
+      const res = await axios.get(ENDPOINTS.MEDICINE.GET_MONTHLY, {
+        params: { year, month },
+      });
       set({ medications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });

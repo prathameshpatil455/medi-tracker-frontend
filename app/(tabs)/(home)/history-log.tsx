@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,97 +9,99 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useMedicationStore } from "../../../store/medication";
 
-// Sample history data
-const SAMPLE_HISTORY_DATA = [
-  {
-    date: "2024-02-02",
-    day: "Today",
-    entries: [
-      {
-        id: "1",
-        medication: "Aspirin",
-        time: "08:00",
-        status: "taken",
-        timestamp: "08:05",
-        color: "#4CAF50",
-      },
-      {
-        id: "2",
-        medication: "Vitamin D",
-        time: "09:00",
-        status: "taken",
-        timestamp: "09:02",
-        color: "#2196F3",
-      },
-      {
-        id: "3",
-        medication: "Metformin",
-        time: "14:00",
-        status: "missed",
-        timestamp: null,
-        color: "#FF9800",
-      },
-    ],
-  },
-  {
-    date: "2024-02-01",
-    day: "Yesterday",
-    entries: [
-      {
-        id: "4",
-        medication: "Aspirin",
-        time: "08:00",
-        status: "taken",
-        timestamp: "08:03",
-        color: "#4CAF50",
-      },
-      {
-        id: "5",
-        medication: "Vitamin D",
-        time: "09:00",
-        status: "taken",
-        timestamp: "09:15",
-        color: "#2196F3",
-      },
-      {
-        id: "6",
-        medication: "Aspirin",
-        time: "20:00",
-        status: "taken",
-        timestamp: "20:30",
-        color: "#4CAF50",
-      },
-    ],
-  },
-  {
-    date: "2024-01-31",
-    day: "2 days ago",
-    entries: [
-      {
-        id: "7",
-        medication: "Aspirin",
-        time: "08:00",
-        status: "missed",
-        timestamp: null,
-        color: "#4CAF50",
-      },
-      {
-        id: "8",
-        medication: "Vitamin D",
-        time: "09:00",
-        status: "taken",
-        timestamp: "09:00",
-        color: "#2196F3",
-      },
-    ],
-  },
-];
+function toLocalYMD(dateStr: string | Date) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-CA");
+}
+
+function getMonthDays(year: number, month: number) {
+  const days = new Date(year, month + 1, 0).getDate();
+  return days;
+}
+
+function formatDateWithSuffix(dateStr: string) {
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const year = date.getFullYear();
+  const month = date.toLocaleString("default", { month: "long" });
+  let suffix = "th";
+  if (day % 10 === 1 && day !== 11) suffix = "st";
+  else if (day % 10 === 2 && day !== 12) suffix = "nd";
+  else if (day % 10 === 3 && day !== 13) suffix = "rd";
+  return `${month} ${day}${suffix}, ${year}`;
+}
 
 export default function HistoryLogScreen() {
   const router = useRouter();
-  const [historyData] = useState(SAMPLE_HISTORY_DATA);
+  const today = new Date();
   const [selectedFilter, setSelectedFilter] = useState("all");
+  const medications = useMedicationStore((state) => state.medications);
+  const fetchMonthlyMedications = useMedicationStore(
+    (state) => state.fetchMonthlyMedications
+  );
+  const loading = useMedicationStore((state) => state.loading);
+  const error = useMedicationStore((state) => state.error);
+
+  // Fetch this month's medications on mount
+  useEffect(() => {
+    fetchMonthlyMedications(today.getFullYear(), today.getMonth() + 1);
+  }, [fetchMonthlyMedications]);
+
+  // Group medications by date (from start of month to today)
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const daysInMonth = getMonthDays(today.getFullYear(), today.getMonth());
+  const todayYMD = toLocalYMD(today);
+
+  // Build a map: date string -> array of meds
+  const medsByDate: Record<string, any[]> = {};
+  for (let d = 1; d <= today.getDate(); d++) {
+    const date = new Date(today.getFullYear(), today.getMonth(), d);
+    const ymd = toLocalYMD(date);
+    medsByDate[ymd] = [];
+  }
+  medications.forEach((med) => {
+    // For each med, add to all days it is active (from med.startDate to med.endDate or today)
+    const medStart = toLocalYMD(med.startDate);
+    const medEnd = (med as any).endDate
+      ? toLocalYMD((med as any).endDate)
+      : todayYMD;
+    Object.keys(medsByDate).forEach((ymd) => {
+      if (medStart <= ymd && ymd <= medEnd && ymd <= todayYMD) {
+        medsByDate[ymd].push(med);
+      }
+    });
+  });
+
+  // Prepare data for UI: array of { date, day, entries }
+  const historyData = Object.keys(medsByDate)
+    .reverse() // most recent first
+    .map((ymd) => {
+      const dateObj = new Date(ymd);
+      let dayLabel = dateObj.toLocaleDateString("default", { weekday: "long" });
+      if (ymd === todayYMD) dayLabel = "Today";
+      else if (
+        ymd ===
+        toLocalYMD(
+          new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+        )
+      )
+        dayLabel = "Yesterday";
+      return {
+        date: ymd,
+        day: dayLabel,
+        entries: medsByDate[ymd].map((med) => ({
+          id: med.id,
+          medication: med.name,
+          time: med.times?.join(", ") || "",
+          status: "taken", // Placeholder, you can add real status if available
+          timestamp: null,
+          color: med.color,
+        })),
+      };
+    })
+    .filter((day) => day.entries.length > 0);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -245,7 +247,9 @@ export default function HistoryLogScreen() {
           ) : (
             filteredData.map((day) => (
               <View key={day.date} style={styles.daySection}>
-                <Text style={styles.dayTitle}>{day.day}</Text>
+                <Text style={styles.dayTitle}>
+                  {formatDateWithSuffix(day.date)}
+                </Text>
                 {day.entries.map((entry) => (
                   <View key={entry.id} style={styles.historyItem}>
                     <View
