@@ -15,7 +15,7 @@ import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
-import { useMedicationStore } from "../../../store/medication";
+import { useMedicineLogStore } from "../../../store/medicineLog";
 import React from "react";
 
 const { width } = Dimensions.get("window");
@@ -125,24 +125,23 @@ function CircularProgress({
 
 interface MedicationItemProps {
   item: any;
-  onTakeDose: (medication: any) => void;
+  onTakeDose: (logItem: any) => void;
 }
 
 function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
+  const color = item.color || "#4CAF50"; // Use a default color as it's not in the log
+
   return (
     <View style={styles.medicationCard}>
       <View style={styles.medicationHeader}>
         <View
-          style={[
-            styles.medicationBadge,
-            { backgroundColor: `${item.color}15` },
-          ]}
+          style={[styles.medicationBadge, { backgroundColor: `${color}15` }]}
         >
-          <Ionicons name="medical" size={24} color={item.color} />
+          <Ionicons name="medical" size={24} color={color} />
         </View>
         <View style={styles.medicationInfo}>
-          <Text style={styles.medicationName}>{item.name}</Text>
-          <Text style={styles.medicationDosage}>{item.dosage}</Text>
+          <Text style={styles.medicationName}>{item.medicineName}</Text>
+          {/* <Text style={styles.medicationDosage}>{item.dosage || "N/A"}</Text> */}
         </View>
         <View style={styles.medicationStatus}>
           {item.taken ? (
@@ -152,7 +151,7 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.takeButton, { backgroundColor: item.color }]}
+              style={[styles.takeButton, { backgroundColor: color }]}
               onPress={() => onTakeDose(item)}
             >
               <Text style={styles.takeButtonText}>Take</Text>
@@ -164,17 +163,20 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
       <View style={styles.medicationDetails}>
         <View style={styles.timeInfo}>
           <Ionicons name="time-outline" size={16} color="#666" />
-          <Text style={styles.timeText}>
-            Next: {item.nextDose || item.times?.[0]}
-          </Text>
+          <Text style={styles.timeText}>Scheduled: {item.scheduledTime}</Text>
         </View>
-        <View style={styles.frequencyInfo}>
-          <Ionicons name="repeat-outline" size={16} color="#666" />
-          <Text style={styles.frequencyText}>
-            {item.times?.length || 0} time{item.times?.length > 1 ? "s" : ""}{" "}
-            daily
-          </Text>
-        </View>
+        {item.taken && item.takenTime && (
+          <View style={styles.frequencyInfo}>
+            <Ionicons name="checkmark-done-outline" size={16} color="#666" />
+            <Text style={styles.frequencyText}>
+              Taken at:{" "}
+              {new Date(item.takenTime).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -183,40 +185,40 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
 export default function HomeScreen() {
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [completedDoses, setCompletedDoses] = useState(0);
-  const { loading, error, medications, fetchTodaysMedications } =
-    useMedicationStore();
-
-  console.log(medications, "check here");
+  const {
+    loading,
+    error,
+    logs: todaysLogs,
+    getDailyMedicineLog,
+    markMedicineAsTaken,
+  } = useMedicineLogStore();
 
   // Fetch today's medications on mount and focus
   useEffect(() => {
-    fetchTodaysMedications();
+    getDailyMedicineLog();
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
-      fetchTodaysMedications();
-    }, [fetchTodaysMedications])
+      getDailyMedicineLog();
+    }, [getDailyMedicineLog])
   );
 
-  // Calculate completed doses (example: count medications with taken=true)
-  useEffect(() => {
-    // Dose tracking is not implemented in Medication type; set to 0 or use a placeholder
-    setCompletedDoses(0);
-  }, [medications]);
+  console.log(todaysLogs, "check here");
 
-  // Calculate progress (example: completed doses / total doses)
-  const totalDoses = medications.length; // Adjust if you have more accurate dose info
+  // Extract the 'doses' array from the log object.
+  const dailyDoses = (todaysLogs as any)?.doses || [];
+
+  // Calculate progress
+  const totalDoses = dailyDoses.length;
+  const completedDoses = dailyDoses.filter((log: any) => log.taken).length;
   const progress = totalDoses > 0 ? completedDoses / totalDoses : 0;
 
-  const handleTakeDose = async (medication: any) => {
+  const handleTakeDose = async (logItem: any) => {
     try {
-      Alert.alert("Dose Recorded", `${medication.name} dose marked as taken!`);
-      setCompletedDoses((prev) => prev + 1);
-      // Optionally, call an API to record the dose here
-      // Optionally, refetch today's medications
-      // fetchTodaysMedications();
+      await markMedicineAsTaken(logItem);
+      // No need to alert here, the UI will update optimistically
+      getDailyMedicineLog();
     } catch (error) {
       console.error("Error recording dose:", error);
       Alert.alert("Error", "Failed to record dose. Please try again.");
@@ -279,10 +281,10 @@ export default function HomeScreen() {
               onPress={() => setShowNotifications(true)}
             >
               <Ionicons name="notifications-outline" size={24} color="white" />
-              {medications.length > 0 && (
+              {dailyDoses.length > 0 && (
                 <View style={styles.notificationBadge}>
                   <Text style={styles.notificationCount}>
-                    {medications.length}
+                    {dailyDoses.length}
                   </Text>
                 </View>
               )}
@@ -315,16 +317,18 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={medications}
+        data={dailyDoses}
         renderItem={renderMedicationItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) =>
+          `${item.medicineId}-${item.scheduledTime}-${index}`
+        }
         ListHeaderComponent={renderHeader}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContainer}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         refreshing={loading}
-        onRefresh={fetchTodaysMedications}
+        onRefresh={getDailyMedicineLog}
       />
 
       <Modal
@@ -344,24 +348,30 @@ export default function HomeScreen() {
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
-            {medications.map((medication) => (
-              <View key={medication.id} style={styles.notificationItem}>
-                <View style={styles.notificationIcon}>
-                  <Ionicons name="medical" size={24} color={medication.color} />
+            {dailyDoses.map((log: any, index: number) => {
+              const color = log.color || "#4CAF50";
+              return (
+                <View
+                  key={`${log.medicineId}-${log.scheduledTime}-${index}`}
+                  style={styles.notificationItem}
+                >
+                  <View style={styles.notificationIcon}>
+                    <Ionicons name="medical" size={24} color={color} />
+                  </View>
+                  <View style={styles.notificationContent}>
+                    <Text style={styles.notificationTitle}>
+                      {log.medicineName}
+                    </Text>
+                    {/* <Text style={styles.notificationMessage}>
+                      {log.dosage || "N/A"}
+                    </Text> */}
+                    <Text style={styles.notificationTime}>
+                      {log.scheduledTime}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.notificationContent}>
-                  <Text style={styles.notificationTitle}>
-                    {medication.name}
-                  </Text>
-                  <Text style={styles.notificationMessage}>
-                    {medication.dosage}
-                  </Text>
-                  <Text style={styles.notificationTime}>
-                    {medication.times?.[0]}
-                  </Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
       </Modal>
@@ -488,6 +498,7 @@ const styles = StyleSheet.create({
   },
   medicationInfo: {
     flex: 1,
+    alignItems: "flex-start",
   },
   medicationName: {
     fontSize: 18,

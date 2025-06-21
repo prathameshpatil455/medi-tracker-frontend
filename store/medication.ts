@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import axios from "../api/axiosInstance";
+import axiosInstance from "../api/axiosInstance";
 import { ENDPOINTS } from "../api/endpoints";
 
 export interface Medication {
@@ -40,7 +40,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchMedications: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_ALL);
+      const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_ALL);
       set({ medications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -50,7 +50,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchTodaysMedications: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_TODAY);
+      const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_TODAY);
       set({ medications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -60,7 +60,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchMonthlyMedications: async (year, month) => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_MONTHLY, {
+      const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_MONTHLY, {
         params: { year, month },
       });
       set({ medications: res.data, loading: false });
@@ -72,7 +72,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchUpcomingMedications: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_UPCOMING);
+      const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_UPCOMING);
       set({ medications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -82,7 +82,9 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchRefillWarnings: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_REFILL_WARNING);
+      const res = await axiosInstance.get(
+        ENDPOINTS.MEDICINE.GET_REFILL_WARNING
+      );
       set({ medications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -92,7 +94,9 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   fetchProgressSummary: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.get(ENDPOINTS.MEDICINE.GET_PROGRESS_SUMMARY);
+      const res = await axiosInstance.get(
+        ENDPOINTS.MEDICINE.GET_PROGRESS_SUMMARY
+      );
       set({ loading: false });
       return res.data;
     } catch (error: any) {
@@ -104,7 +108,10 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   addMedication: async (medication) => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.post(ENDPOINTS.MEDICINE.ADD_MEDICINE, medication);
+      const res = await axiosInstance.post(
+        ENDPOINTS.MEDICINE.ADD_MEDICINE,
+        medication
+      );
       set((state) => ({
         medications: [...state.medications, res.data],
         loading: false,
@@ -117,7 +124,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   updateMedication: async (id, medication) => {
     set({ loading: true, error: null });
     try {
-      const res = await axios.put(
+      const res = await axiosInstance.put(
         `${ENDPOINTS.MEDICINE.ADD_MEDICINE}/${id}`,
         medication
       );
@@ -133,7 +140,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
   deleteMedication: async (id) => {
     set({ loading: true, error: null });
     try {
-      await axios.delete(`${ENDPOINTS.MEDICINE.ADD_MEDICINE}/${id}`);
+      await axiosInstance.delete(`${ENDPOINTS.MEDICINE.ADD_MEDICINE}/${id}`);
       set((state) => ({
         medications: state.medications.filter((m) => m.id !== id),
         loading: false,

@@ -9,7 +9,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { useMedicationStore } from "../../../store/medication";
+import { useMedicineLogStore, MedicineLog } from "../../../store/medicineLog";
+import { Medication } from "../../../store/medication";
 
 function toLocalYMD(dateStr: string | Date) {
   const d = new Date(dateStr);
@@ -33,72 +34,94 @@ function formatDateWithSuffix(dateStr: string) {
   return `${month} ${day}${suffix}, ${year}`;
 }
 
+interface EnrichedMedicineLog {
+  id: string;
+  date: string;
+  taken: boolean;
+  skipped: boolean;
+  timeTaken?: string;
+  medication: Medication;
+}
+
 export default function HistoryLogScreen() {
   const router = useRouter();
   const today = new Date();
   const [selectedFilter, setSelectedFilter] = useState("all");
-  const medications = useMedicationStore((state) => state.medications);
-  const fetchMonthlyMedications = useMedicationStore(
-    (state) => state.fetchMonthlyMedications
-  );
-  const loading = useMedicationStore((state) => state.loading);
-  const error = useMedicationStore((state) => state.error);
 
-  // Fetch this month's medications on mount
+  const { logs, getMonthlyMedicineLogs, loading, error } =
+    useMedicineLogStore();
+
+  console.log(logs, "medicine month logs");
+
+  // Fetch this month's logs on mount
   useEffect(() => {
-    fetchMonthlyMedications(today.getFullYear(), today.getMonth() + 1);
-  }, [fetchMonthlyMedications]);
+    getMonthlyMedicineLogs(today.getFullYear(), today.getMonth() + 1);
+  }, [getMonthlyMedicineLogs]);
 
-  // Group medications by date (from start of month to today)
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const daysInMonth = getMonthDays(today.getFullYear(), today.getMonth());
+  // Group logs by date, only including today and past days
   const todayYMD = toLocalYMD(today);
 
-  // Build a map: date string -> array of meds
-  const medsByDate: Record<string, any[]> = {};
-  for (let d = 1; d <= today.getDate(); d++) {
-    const date = new Date(today.getFullYear(), today.getMonth(), d);
-    const ymd = toLocalYMD(date);
-    medsByDate[ymd] = [];
-  }
-  medications.forEach((med) => {
-    // For each med, add to all days it is active (from med.startDate to med.endDate or today)
-    const medStart = toLocalYMD(med.startDate);
-    const medEnd = (med as any).endDate
-      ? toLocalYMD((med as any).endDate)
-      : todayYMD;
-    Object.keys(medsByDate).forEach((ymd) => {
-      if (medStart <= ymd && ymd <= medEnd && ymd <= todayYMD) {
-        medsByDate[ymd].push(med);
-      }
-    });
-  });
+  // Safely transform and filter logs
+  const pastAndPresentLogs = (Array.isArray(logs) ? logs : [])
+    .map((log: MedicineLog) => {
+      // Assuming the log from the backend might contain the full medication object
+      const enrichedLog = log as any;
+      return {
+        ...log,
+        skipped: enrichedLog.skipped || false,
+        medication: enrichedLog.medication || ({} as Medication),
+      };
+    })
+    .filter((log) => toLocalYMD(log.date) <= todayYMD);
 
-  // Prepare data for UI: array of { date, day, entries }
-  const historyData = Object.keys(medsByDate)
-    .reverse() // most recent first
+  const logsByDate = pastAndPresentLogs.reduce((acc, log) => {
+    const ymd = toLocalYMD(log.date);
+    if (!acc[ymd]) {
+      acc[ymd] = [];
+    }
+    acc[ymd].push(log);
+    return acc;
+  }, {} as Record<string, typeof pastAndPresentLogs>);
+
+  // Prepare data for UI
+  const historyData = Object.keys(logsByDate)
+    .sort((a, b) => b.localeCompare(a)) // Most recent first
     .map((ymd) => {
-      const dateObj = new Date(ymd);
+      const dateObj = new Date(`${ymd}T00:00:00`); // Use ISO format to avoid timezone issues
       let dayLabel = dateObj.toLocaleDateString("default", { weekday: "long" });
-      if (ymd === todayYMD) dayLabel = "Today";
-      else if (
+      if (ymd === todayYMD) {
+        dayLabel = "Today";
+      } else if (
         ymd ===
         toLocalYMD(
           new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
         )
-      )
+      ) {
         dayLabel = "Yesterday";
+      }
+
       return {
         date: ymd,
         day: dayLabel,
-        entries: medsByDate[ymd].map((med) => ({
-          id: med.id,
-          medication: med.name,
-          time: med.times?.join(", ") || "",
-          status: "taken", // Placeholder, you can add real status if available
-          timestamp: null,
-          color: med.color,
-        })),
+        entries: logsByDate[ymd].map((log) => {
+          let status = "missed";
+          if (log.taken) status = "taken";
+          else if (log.skipped) status = "skipped";
+
+          return {
+            id: log.id,
+            medication: log.medication.name,
+            time: log.medication.times?.join(", ") || "N/A",
+            status,
+            timestamp: log.timeTaken
+              ? new Date(log.timeTaken).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : null,
+            color: log.medication.color,
+          };
+        }),
       };
     })
     .filter((day) => day.entries.length > 0);
@@ -149,7 +172,7 @@ export default function HistoryLogScreen() {
           .map((day) => ({
             ...day,
             entries: day.entries.filter(
-              (entry) => entry.status === selectedFilter
+              (entry: any) => entry.status === selectedFilter
             ),
           }))
           .filter((day) => day.entries.length > 0);
@@ -250,7 +273,7 @@ export default function HistoryLogScreen() {
                 <Text style={styles.dayTitle}>
                   {formatDateWithSuffix(day.date)}
                 </Text>
-                {day.entries.map((entry) => (
+                {day.entries.map((entry: any) => (
                   <View key={entry.id} style={styles.historyItem}>
                     <View
                       style={[

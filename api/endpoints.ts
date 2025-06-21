@@ -27,6 +27,14 @@ export const ENDPOINTS = {
     GET_PROGRESS_SUMMARY: "/api/medicines/progress/summary",
   },
 
+  MEDICINE_LOGS: {
+    GET_DAILY: "/api/medicineLogs/logs/daily",
+    GET_MONTHLY: "/api/medicineLogs/logs/monthly",
+    GET_BY_DATE: "/api/medicineLogs/logs",
+    MARK_TAKEN: "/api/medicineLogs/", // for single medicine, append /:id
+    MARK_BULK_TAKEN: "/api/medicineLogs/mark-bulk",
+  },
+
   // Reports endpoints
   REPORTS: {
     MONTHLY: "/api/reports/monthly",
