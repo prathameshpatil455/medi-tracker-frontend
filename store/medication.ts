@@ -11,6 +11,12 @@ export interface Medication {
   duration: string;
   color: string;
   reminderEnabled: boolean;
+  isUrgent?: boolean;
+  remainingPills?: number;
+  totalPills?: number;
+  refillDate?: string;
+  tabletCount?: number;
+  daysLeft?: number;
   // Add other fields as needed
 }
 

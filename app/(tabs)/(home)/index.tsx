@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   Animated,
+  SafeAreaView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
@@ -17,6 +18,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import Svg, { Circle } from "react-native-svg";
 import { useMedicineLogStore } from "../../../store/medicineLog";
 import React from "react";
+import { formatTime12Hour } from "../../../utils/time";
 
 const { width } = Dimensions.get("window");
 
@@ -163,7 +165,9 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
       <View style={styles.medicationDetails}>
         <View style={styles.timeInfo}>
           <Ionicons name="time-outline" size={16} color="#666" />
-          <Text style={styles.timeText}>Scheduled: {item.scheduledTime}</Text>
+          <Text style={styles.timeText}>
+            Scheduled: {formatTime12Hour(item.scheduledTime)}
+          </Text>
         </View>
         {item.taken && item.takenTime && (
           <View style={styles.frequencyInfo}>
@@ -174,6 +178,7 @@ function MedicationItem({ item, onTakeDose }: MedicationItemProps) {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
+              {/* {formatTime12Hour(item.takenTime)} */}
             </Text>
           </View>
         )}
@@ -188,7 +193,7 @@ export default function HomeScreen() {
   const {
     loading,
     error,
-    logs: todaysLogs,
+    dailyLogs,
     getDailyMedicineLog,
     markMedicineAsTaken,
   } = useMedicineLogStore();
@@ -204,10 +209,10 @@ export default function HomeScreen() {
     }, [getDailyMedicineLog])
   );
 
-  console.log(todaysLogs, "check here");
+  console.log(dailyLogs, "check here");
 
   // Extract the 'doses' array from the log object.
-  const dailyDoses = (todaysLogs as any)?.doses || [];
+  const dailyDoses = (dailyLogs as any)?.doses || [];
 
   // Calculate progress
   const totalDoses = dailyDoses.length;
@@ -315,7 +320,7 @@ export default function HomeScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <FlatList
         data={dailyDoses}
         renderItem={renderMedicationItem}
@@ -366,7 +371,7 @@ export default function HomeScreen() {
                       {log.dosage || "N/A"}
                     </Text> */}
                     <Text style={styles.notificationTime}>
-                      {log.scheduledTime}
+                      Scheduled: {formatTime12Hour(log.scheduledTime)}
                     </Text>
                   </View>
                 </View>
@@ -380,7 +385,7 @@ export default function HomeScreen() {
           <Text style={{ color: "#c62828" }}>Error: {error}</Text>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -538,9 +543,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   medicationDetails: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: "column",
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
   },
   timeInfo: {
     flexDirection: "row",

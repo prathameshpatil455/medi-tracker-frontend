@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,20 +6,42 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  Modal,
+  Platform,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMedicationStore } from "../../../store/medication";
+import { formatTime12Hour } from "../../../utils/time";
+import { useFocusEffect } from "@react-navigation/native";
+
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function getWeekdayNames(days: number[]) {
+  return days.map((d) => WEEKDAY_NAMES[d % 7]);
+}
 
 export default function MedicationScreen() {
   const router = useRouter();
   const { medications, fetchMedications, deleteMedication, loading, error } =
     useMedicationStore();
 
+  const [selectedMedication, setSelectedMedication] = useState<any>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  console.log(medications, "check them");
+
   useEffect(() => {
     fetchMedications();
-  }, [fetchMedications]);
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchMedications();
+    }, [fetchMedications])
+  );
 
   const handleAddMedication = () => {
     router.push("/(tabs)/(medication)/add-medication");
@@ -30,7 +52,10 @@ export default function MedicationScreen() {
   };
 
   const handleEditMedication = (medication: any) => {
-    Alert.alert("Edit Medication", `Edit ${medication.name}`);
+    router.push({
+      pathname: "/(tabs)/(medication)/add-medication",
+      params: { id: medication.id },
+    });
   };
 
   const handleDeleteMedication = (medication: any) => {
@@ -43,15 +68,26 @@ export default function MedicationScreen() {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            deleteMedication(medication.id);
+            console.log(medication, "this is the medicaition");
+            deleteMedication(medication._id);
           },
         },
       ]
     );
   };
 
+  const handleCardPress = (medication: any) => {
+    setSelectedMedication(medication);
+    setModalVisible(true);
+  };
+
   const renderMedication = ({ item: medication }: { item: any }) => (
-    <View key={medication.id} style={styles.medicationCard}>
+    <TouchableOpacity
+      key={medication.id}
+      style={styles.medicationCard}
+      onPress={() => handleCardPress(medication)}
+      activeOpacity={0.85}
+    >
       <View
         style={[
           styles.medicationBadge,
@@ -62,14 +98,17 @@ export default function MedicationScreen() {
       </View>
       <View style={styles.medicationInfo}>
         <Text style={styles.medicationName}>{medication.name}</Text>
-        <Text style={styles.medicationDosage}>
-          {medication.dosage} • {medication.frequency || ""}
-        </Text>
+        {medication.dosage ? (
+          <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+        ) : null}
         <Text style={styles.medicationTime}>
-          <Ionicons name="time-outline" size={14} color="#666" />{" "}
-          {medication.times?.join(", ")}
+          Start: {new Date(medication.startDate).toLocaleDateString()}
         </Text>
-        {/* Add refill info if available */}
+        {medication.endDate && (
+          <Text style={styles.medicationTime}>
+            End: {new Date(medication.endDate).toLocaleDateString()}
+          </Text>
+        )}
       </View>
       <View style={styles.medicationActions}>
         <TouchableOpacity
@@ -85,8 +124,76 @@ export default function MedicationScreen() {
           <Ionicons name="trash" size={16} color="#F44336" />
         </TouchableOpacity>
       </View>
-    </View>
+    </TouchableOpacity>
   );
+
+  const renderModal = () => {
+    if (!selectedMedication) return null;
+    const med = selectedMedication;
+    return (
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{med.name}</Text>
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                style={styles.closeButton}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Dosage:</Text>
+              <Text style={styles.modalValue}>{med.dosage || "-"}</Text>
+
+              <Text style={styles.modalLabel}>Frequency per day:</Text>
+              <Text style={styles.modalValue}>
+                {med.frequencyPerDay || "-"}
+              </Text>
+
+              <Text style={styles.modalLabel}>Days of week:</Text>
+              <Text style={styles.modalValue}>
+                {med.daysOfWeek && med.daysOfWeek.length > 0
+                  ? getWeekdayNames(med.daysOfWeek).join(", ")
+                  : "Every day"}
+              </Text>
+
+              <Text style={styles.modalLabel}>Times:</Text>
+              <Text style={styles.modalValue}>
+                {med.times && med.times.length > 0
+                  ? med.times.map((t: string) => formatTime12Hour(t)).join(", ")
+                  : "-"}
+              </Text>
+
+              <Text style={styles.modalLabel}>Tablet count:</Text>
+              <Text style={styles.modalValue}>{med.tabletCount || "-"}</Text>
+
+              <Text style={styles.modalLabel}>Start date:</Text>
+              <Text style={styles.modalValue}>
+                {med.startDate
+                  ? new Date(med.startDate).toLocaleDateString()
+                  : "-"}
+              </Text>
+
+              <Text style={styles.modalLabel}>End date:</Text>
+              <Text style={styles.modalValue}>
+                {med.endDate ? new Date(med.endDate).toLocaleDateString() : "-"}
+              </Text>
+
+              <Text style={styles.modalLabel}>Notes:</Text>
+              <Text style={styles.modalValue}>{med.notes || "-"}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -156,11 +263,12 @@ export default function MedicationScreen() {
               data={medications}
               renderItem={renderMedication}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingBottom: 40 }}
+              contentContainerStyle={{ paddingBottom: 120 }}
             />
           )}
         </View>
       </View>
+      {renderModal()}
     </View>
   );
 }
@@ -307,5 +415,43 @@ const styles = StyleSheet.create({
   addMedicationButtonText: {
     color: "white",
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    maxHeight: Platform.OS === "ios" ? "70%" : "80%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1a8e2d",
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalLabel: {
+    fontSize: 14,
+    color: "#888",
+    marginTop: 12,
+    marginBottom: 2,
+  },
+  modalValue: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "500",
+    marginBottom: 4,
   },
 });

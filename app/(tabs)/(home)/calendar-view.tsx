@@ -1,17 +1,20 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMedicationStore } from "../../../store/medication";
+import { useMedicineLogStore } from "../../../store/medicineLog";
 import { useFocusEffect } from "@react-navigation/native";
+import { formatTime12Hour } from "@/utils/time";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -21,7 +24,7 @@ function getDaysInMonth(year: number, month: number) {
   return { days, firstDay };
 }
 
-function toLocalYMD(dateStr) {
+function toLocalYMD(dateStr: string | Date) {
   const d = new Date(dateStr);
   // 'en-CA' gives YYYY-MM-DD
   return d.toLocaleDateString("en-CA");
@@ -33,13 +36,15 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
-  const medications = useMedicationStore((state) => state.medications);
-  const { fetchMonthlyMedications, loading, error } = useMedicationStore();
+  const { monthlyLogs, getMonthlyMedicineLogs, loading, error } =
+    useMedicineLogStore();
 
-  // Fetch monthly meds on mount and when month/year changes
+  console.log(monthlyLogs, "montly logs");
+
+  // Fetch monthly logs on mount and when month/year changes
   useEffect(() => {
-    fetchMonthlyMedications(calendarYear, calendarMonth + 1);
-  }, [calendarYear, calendarMonth, fetchMonthlyMedications]);
+    getMonthlyMedicineLogs(calendarYear, calendarMonth + 1);
+  }, [calendarYear, calendarMonth, getMonthlyMedicineLogs]);
 
   // When month changes, reset selectedDate to first of month if not in current month
   useEffect(() => {
@@ -50,6 +55,29 @@ export default function CalendarScreen() {
       setSelectedDate(new Date(calendarYear, calendarMonth, 1));
     }
   }, [calendarYear, calendarMonth]);
+
+  const logStatusByDate = useMemo(() => {
+    const statusMap: { [key: string]: { allTaken: boolean } } = {};
+    if (!Array.isArray(monthlyLogs)) return statusMap;
+
+    const logsByDate = monthlyLogs.reduce((acc, log) => {
+      const ymd = toLocalYMD(log.date);
+      if (!acc[ymd]) {
+        acc[ymd] = [];
+      }
+      acc[ymd].push(log);
+      return acc;
+    }, {} as { [key: string]: any[] });
+
+    for (const date in logsByDate) {
+      const logs = logsByDate[date];
+      if (logs.length > 0) {
+        const allTaken = logs.every((log) => log.taken);
+        statusMap[date] = { allTaken };
+      }
+    }
+    return statusMap;
+  }, [monthlyLogs]);
 
   // Calendar grid
   const { days, firstDay } = getDaysInMonth(calendarYear, calendarMonth);
@@ -69,14 +97,11 @@ export default function CalendarScreen() {
     weeks.push(week);
   }
 
-  // Filter medications for selected day
-  const selectedDayStr = selectedDate.toISOString().split("T")[0];
-  const medsForDay = medications.filter((med) => {
-    const medStart = toLocalYMD(med.startDate);
-    const medEnd = med.endDate ? toLocalYMD(med.endDate) : null;
-    const selectedYMD = toLocalYMD(selectedDate);
-    return medStart <= selectedYMD && (!medEnd || selectedYMD <= medEnd);
-  });
+  // Filter logs for selected day
+  const selectedYMD = toLocalYMD(selectedDate);
+  const logsForDay = (Array.isArray(monthlyLogs) ? monthlyLogs : []).filter(
+    (log: any) => log.date === selectedYMD
+  );
 
   // Render calendar grid
   const renderCalendar = () => (
@@ -95,6 +120,21 @@ export default function CalendarScreen() {
               date && date.toDateString() === today.toDateString();
             const isSelected =
               date && date.toDateString() === selectedDate.toDateString();
+
+            const ymd = date ? toLocalYMD(date) : null;
+            const logStatus = ymd ? logStatusByDate[ymd] : null;
+            const isPast = date && date < today;
+
+            let statusTextStyle = {};
+            if (logStatus && isPast && !isSelected && !isToday) {
+              statusTextStyle = {
+                color: logStatus.allTaken
+                  ? "#4CAF50" // Green
+                  : "#F44336", // Red
+                fontWeight: "600",
+              };
+            }
+
             return (
               <TouchableOpacity
                 key={j}
@@ -109,6 +149,7 @@ export default function CalendarScreen() {
                 <Text
                   style={[
                     styles.dayText,
+                    statusTextStyle, // Apply status text style
                     isToday && styles.todayText,
                     isSelected && styles.selectedDayText,
                   ]}
@@ -123,33 +164,39 @@ export default function CalendarScreen() {
     </View>
   );
 
-  // Render medications for selected day
-  const renderMedicationsForDate = () => (
+  // Render logs for selected day
+  const renderLogsForDate = () => (
     <View>
-      {medsForDay.length === 0 ? (
+      {loading ? (
+        <View style={{ paddingVertical: 30, alignItems: "center" }}>
+          <ActivityIndicator size="large" color="#1a8e2d" />
+        </View>
+      ) : logsForDay.length === 0 ? (
         <Text style={{ color: "#666", textAlign: "center", marginTop: 20 }}>
           No medications scheduled for this day
         </Text>
       ) : (
-        medsForDay.map((medication) => (
-          <View key={medication.id} style={styles.medicationCard}>
+        logsForDay.map((log) => (
+          <View key={log.id} style={styles.medicationCard}>
             <View
-              style={[
-                styles.medicationColor,
-                { backgroundColor: medication.color },
-              ]}
+              style={[styles.medicationColor, { backgroundColor: log.color }]}
             />
             <View style={styles.medicationInfo}>
-              <Text style={styles.medicationName}>{medication.name}</Text>
-              <Text style={styles.medicationDosage}>{medication.dosage}</Text>
+              <Text style={styles.medicationName}>{log.medicineName}</Text>
+              {/* <Text style={styles.medicationDosage}>{log.dosage}</Text> */}
               <Text style={styles.medicationTime}>
-                {medication.times?.join(", ")}
+                Scheduled: {formatTime12Hour(log?.scheduledTime || "")}
               </Text>
             </View>
-            {/* Placeholder for status: taken/not taken */}
             <View style={styles.takenBadge}>
-              <Ionicons name="ellipse-outline" size={20} color="#FF9800" />
-              <Text style={styles.takenText}>Not tracked</Text>
+              <Ionicons
+                name={log.taken ? "checkmark-circle" : "ellipse-outline"}
+                size={20}
+                color={log.taken ? "#4CAF50" : "#FF9800"}
+              />
+              <Text style={styles.takenText}>
+                {log.taken ? "Taken" : "Not taken"}
+              </Text>
             </View>
           </View>
         ))
@@ -168,60 +215,66 @@ export default function CalendarScreen() {
       <View style={styles.content}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
             style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <Ionicons name="chevron-back" size={28} color="#1a8e2d" />
+            <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Calendar</Text>
         </View>
-        <View style={styles.calendarContainer}>
-          <View style={styles.monthHeader}>
-            <TouchableOpacity
-              onPress={() => {
-                if (calendarMonth === 0) {
-                  setCalendarYear(calendarYear - 1);
-                  setCalendarMonth(11);
-                } else {
-                  setCalendarMonth(calendarMonth - 1);
-                }
-              }}
-            >
-              <Ionicons name="chevron-back" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.monthText}>
-              {new Date(calendarYear, calendarMonth).toLocaleString("default", {
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          // contentContainerStyle={{ paddingBottom: 40 }}
+        >
+          <View style={styles.calendarContainer}>
+            <View style={styles.monthHeader}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (calendarMonth === 0) {
+                    setCalendarYear(calendarYear - 1);
+                    setCalendarMonth(11);
+                  } else {
+                    setCalendarMonth(calendarMonth - 1);
+                  }
+                }}
+              >
+                <Ionicons name="chevron-back" size={24} color="#333" />
+              </TouchableOpacity>
+              <Text style={styles.monthText}>
+                {new Date(calendarYear, calendarMonth).toLocaleString(
+                  "default",
+                  {
+                    month: "long",
+                    year: "numeric",
+                  }
+                )}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  if (calendarMonth === 11) {
+                    setCalendarYear(calendarYear + 1);
+                    setCalendarMonth(0);
+                  } else {
+                    setCalendarMonth(calendarMonth + 1);
+                  }
+                }}
+              >
+                <Ionicons name="chevron-forward" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            {renderCalendar()}
+          </View>
+          <View style={styles.scheduleContainer}>
+            <Text style={styles.scheduleTitle}>
+              {selectedDate.toLocaleDateString("default", {
+                weekday: "long",
                 month: "long",
-                year: "numeric",
+                day: "numeric",
               })}
             </Text>
-            <TouchableOpacity
-              onPress={() => {
-                if (calendarMonth === 11) {
-                  setCalendarYear(calendarYear + 1);
-                  setCalendarMonth(0);
-                } else {
-                  setCalendarMonth(calendarMonth + 1);
-                }
-              }}
-            >
-              <Ionicons name="chevron-forward" size={24} color="#333" />
-            </TouchableOpacity>
+            {renderLogsForDate()}
           </View>
-          {renderCalendar()}
-        </View>
-        <View style={styles.scheduleContainer}>
-          <Text style={styles.scheduleTitle}>
-            {selectedDate.toLocaleDateString("default", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </Text>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {renderMedicationsForDate()}
-          </ScrollView>
-        </View>
+        </ScrollView>
       </View>
     </View>
   );
@@ -247,21 +300,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 25,
     zIndex: 1,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "white",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
   },
   headerTitle: {
     fontSize: 28,
@@ -336,6 +381,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
+    paddingBottom: 50,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,

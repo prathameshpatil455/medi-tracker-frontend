@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMedicationStore } from "../../../store/medication";
+import { formatTime12Hour } from "../../../utils/time";
 
 const { width } = Dimensions.get("window");
 
@@ -24,9 +25,7 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const FREQUENCY_TYPES = [
   { id: "daily", label: "Daily" },
-  { id: "every_x_days", label: "Every X days" },
   { id: "weekly", label: "Weekly (choose days)" },
-  { id: "custom", label: "Custom" },
 ];
 
 const DURATIONS = [
@@ -34,7 +33,6 @@ const DURATIONS = [
   { id: "2", label: "14 days", value: 14 },
   { id: "3", label: "30 days", value: 30 },
   { id: "4", label: "90 days", value: 90 },
-  { id: "5", label: "Ongoing", value: -1 },
 ];
 
 export default function AddMedicationScreen() {
@@ -45,10 +43,8 @@ export default function AddMedicationScreen() {
   const [form, setForm] = useState({
     name: "",
     dosage: "",
-    frequencyType: "daily", // daily, every_x_days, weekly, custom
-    everyXDays: "2", // for every_x_days
+    frequencyType: "daily", // daily, weekly
     weeklyDays: [] as number[], // for weekly (0=Sun, 6=Sat)
-    customDays: [] as number[], // for custom
     startDate: new Date(),
     endDate: null as Date | null,
     timesPerDay: 1,
@@ -57,7 +53,6 @@ export default function AddMedicationScreen() {
     reminderEnabled: true,
     refillReminder: false,
     currentSupply: "",
-    refillAt: "",
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [showTimePicker, setShowTimePicker] = useState<{
@@ -68,7 +63,6 @@ export default function AddMedicationScreen() {
     show: boolean;
     type: "start" | "end";
   }>({ show: false, type: "start" });
-  const [selectedFrequency, setSelectedFrequency] = useState("");
   const [selectedDuration, setSelectedDuration] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -77,9 +71,7 @@ export default function AddMedicationScreen() {
     setForm((prev) => ({
       ...prev,
       frequencyType: type,
-      everyXDays: type === "every_x_days" ? "2" : prev.everyXDays,
       weeklyDays: type === "weekly" ? [] : prev.weeklyDays,
-      customDays: type === "custom" ? [] : prev.customDays,
     }));
   };
 
@@ -135,23 +127,21 @@ export default function AddMedicationScreen() {
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
     if (!form.name.trim()) newErrors.name = "Medication name is required";
-    if (!form.dosage.trim()) newErrors.dosage = "Dosage is required";
     if (form.times.length === 0)
       newErrors.times = "At least one time is required";
     if (!form.startDate) newErrors.startDate = "Start date is required";
-    if (!form.endDate) newErrors.endDate = "End date is required";
+    if (!selectedDuration) newErrors.duration = "Please select a duration";
     if (form.endDate && form.startDate && form.endDate < form.startDate)
       newErrors.endDate = "End date must be after start date";
-    if (
-      form.frequencyType === "every_x_days" &&
-      (!form.everyXDays ||
-        isNaN(Number(form.everyXDays)) ||
-        Number(form.everyXDays) < 2)
-    ) {
-      newErrors.everyXDays = "Enter a valid number (2 or more)";
-    }
     if (form.frequencyType === "weekly" && form.weeklyDays.length === 0) {
       newErrors.weeklyDays = "Select at least one day";
+    }
+    if (
+      !form.currentSupply.trim() ||
+      isNaN(Number(form.currentSupply)) ||
+      Number(form.currentSupply) <= 0
+    ) {
+      newErrors.currentSupply = "Enter a valid supply amount";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -171,9 +161,10 @@ export default function AddMedicationScreen() {
         endDate: form.endDate ? form.endDate.toISOString() : null,
         times: form.times,
         color: "#4CAF50", // Or generate a random color if needed
-        duration: "", // placeholder for required type
+        duration: selectedDuration,
       };
-      await addMedication(medicationData);
+      console.log(form, "check the submitted values");
+      // await addMedication(medicationData);
       Alert.alert("Success", "Medication added successfully", [
         {
           text: "OK",
@@ -187,24 +178,15 @@ export default function AddMedicationScreen() {
     }
   };
 
-  const handleFrequencySelect = (freq: string) => {
-    setSelectedFrequency(freq);
-    const selectedFreq = FREQUENCY_TYPES.find((f) => f.label === freq);
-    setForm((prev) => ({
-      ...prev,
-      frequencyType: selectedFreq?.id || "daily",
-      everyXDays: selectedFreq?.id === "every_x_days" ? "2" : prev.everyXDays,
-      weeklyDays: selectedFreq?.id === "weekly" ? [] : prev.weeklyDays,
-      customDays: selectedFreq?.id === "custom" ? [] : prev.customDays,
-    }));
-    if (errors.frequencyType) {
-      setErrors((prev) => ({ ...prev, frequencyType: "" }));
-    }
-  };
+  const handleDurationSelect = (label: string, value: number) => {
+    setSelectedDuration(label);
+    const newEndDate = new Date(form.startDate);
+    newEndDate.setDate(form.startDate.getDate() + value);
+    setForm((prev) => ({ ...prev, endDate: newEndDate }));
 
-  const handleDurationSelect = (dur: string) => {
-    setSelectedDuration(dur);
-    setForm((prev) => ({ ...prev, duration: dur }));
+    if (errors.endDate) {
+      setErrors((prev) => ({ ...prev, endDate: "" }));
+    }
     if (errors.duration) {
       setErrors((prev) => ({ ...prev, duration: "" }));
     }
@@ -235,27 +217,32 @@ export default function AddMedicationScreen() {
     </View>
   );
 
+  const renderDurationOptions = () => (
+    <View style={styles.optionsGrid}>
+      {DURATIONS.map((dur) => (
+        <TouchableOpacity
+          key={dur.id}
+          style={[
+            styles.optionCard,
+            selectedDuration === dur.label && styles.selectedOptionCard,
+          ]}
+          onPress={() => handleDurationSelect(dur.label, dur.value)}
+        >
+          <Text
+            style={[
+              styles.optionLabel,
+              selectedDuration === dur.label && styles.selectedOptionLabel,
+            ]}
+          >
+            {dur.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   // Render extra frequency controls
   const renderFrequencyControls = () => {
-    if (form.frequencyType === "every_x_days") {
-      return (
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={[styles.mainInput, errors.everyXDays && styles.inputError]}
-            placeholder="Every how many days? (e.g., 2)"
-            placeholderTextColor="#999"
-            value={form.everyXDays}
-            onChangeText={(text) =>
-              setForm((prev) => ({ ...prev, everyXDays: text }))
-            }
-            keyboardType="numeric"
-          />
-          {errors.everyXDays && (
-            <Text style={styles.errorText}>{errors.everyXDays}</Text>
-          )}
-        </View>
-      );
-    }
     if (form.frequencyType === "weekly") {
       return (
         <View
@@ -332,7 +319,7 @@ export default function AddMedicationScreen() {
           key={idx}
           style={{
             flexDirection: "column",
-            alignItems: "start",
+            alignItems: "flex-start",
             gap: 6,
             marginBottom: 10,
           }}
@@ -347,7 +334,7 @@ export default function AddMedicationScreen() {
             <View style={styles.timeIconContainer}>
               <Ionicons name="time-outline" size={20} color="#1a8e2d" />
             </View>
-            <Text style={styles.timeButtonText}>{time}</Text>
+            <Text style={styles.timeButtonText}>{formatTime12Hour(time)}</Text>
             <Ionicons name="chevron-forward" size={20} color="#666" />
           </TouchableOpacity>
         </View>
@@ -426,6 +413,15 @@ export default function AddMedicationScreen() {
             {renderFrequencyControls()}
           </View>
 
+          {/* Duration */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>For how long?</Text>
+            {renderDurationOptions()}
+            {errors.duration && (
+              <Text style={styles.errorText}>{errors.duration}</Text>
+            )}
+          </View>
+
           {/* Dates */}
           <View style={styles.section}>
             <TouchableOpacity
@@ -441,8 +437,9 @@ export default function AddMedicationScreen() {
               <Ionicons name="chevron-forward" size={20} color="#666" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.dateButton}
-              onPress={() => setShowDatePicker({ show: true, type: "end" })}
+              style={[styles.dateButton, { opacity: 0.7 }]}
+              onPress={() => {}}
+              disabled
             >
               <View style={styles.dateIconContainer}>
                 <Ionicons name="calendar" size={20} color="#1a8e2d" />
@@ -451,9 +448,8 @@ export default function AddMedicationScreen() {
                 Ends{" "}
                 {form.endDate
                   ? form.endDate.toLocaleDateString()
-                  : "Select end date"}
+                  : "Select a duration"}
               </Text>
-              <Ionicons name="chevron-forward" size={20} color="#666" />
             </TouchableOpacity>
             {errors.startDate && (
               <Text style={styles.errorText}>{errors.startDate}</Text>
@@ -461,6 +457,30 @@ export default function AddMedicationScreen() {
             {errors.endDate && (
               <Text style={styles.errorText}>{errors.endDate}</Text>
             )}
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={[
+                  styles.mainInput,
+                  errors.currentSupply && styles.inputError,
+                ]}
+                placeholder="Current Supply (e.g., 30 pills)"
+                placeholderTextColor="#999"
+                value={form.currentSupply}
+                onChangeText={(text) => {
+                  setForm({ ...form, currentSupply: text });
+                  if (errors.currentSupply) {
+                    setErrors({ ...errors, currentSupply: "" });
+                  }
+                }}
+                keyboardType="numeric"
+              />
+              {errors.currentSupply && (
+                <Text style={styles.errorText}>{errors.currentSupply}</Text>
+              )}
+            </View>
           </View>
 
           {/* Time Pickers */}
@@ -512,68 +532,11 @@ export default function AddMedicationScreen() {
                   value={form.refillReminder}
                   onValueChange={(value) => {
                     setForm({ ...form, refillReminder: value });
-                    if (!value) {
-                      setErrors({
-                        ...errors,
-                        currentSupply: "",
-                        refillAt: "",
-                      });
-                    }
                   }}
                   trackColor={{ false: "#ddd", true: "#1a8e2d" }}
                   thumbColor="white"
                 />
               </View>
-              {form.refillReminder && (
-                <View style={styles.refillInputs}>
-                  <View style={styles.inputRow}>
-                    <View style={[styles.inputContainer, styles.flex1]}>
-                      <TextInput
-                        style={[
-                          styles.input,
-                          errors.currentSupply && styles.inputError,
-                        ]}
-                        placeholder="Current Supply"
-                        placeholderTextColor="#999"
-                        value={form.currentSupply}
-                        onChangeText={(text) => {
-                          setForm({ ...form, currentSupply: text });
-                          if (errors.currentSupply) {
-                            setErrors({ ...errors, currentSupply: "" });
-                          }
-                        }}
-                        keyboardType="numeric"
-                      />
-                      {errors.currentSupply && (
-                        <Text style={styles.errorText}>
-                          {errors.currentSupply}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={[styles.inputContainer, styles.flex1]}>
-                      <TextInput
-                        style={[
-                          styles.input,
-                          errors.refillAt && styles.inputError,
-                        ]}
-                        placeholder="Alert at"
-                        placeholderTextColor="#999"
-                        value={form.refillAt}
-                        onChangeText={(text) => {
-                          setForm({ ...form, refillAt: text });
-                          if (errors.refillAt) {
-                            setErrors({ ...errors, refillAt: "" });
-                          }
-                        }}
-                        keyboardType="numeric"
-                      />
-                      {errors.refillAt && (
-                        <Text style={styles.errorText}>{errors.refillAt}</Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-              )}
             </View>
           </View>
 

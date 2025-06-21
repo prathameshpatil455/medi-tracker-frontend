@@ -11,6 +11,7 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { useMedicineLogStore, MedicineLog } from "../../../store/medicineLog";
 import { Medication } from "../../../store/medication";
+import { formatTime12Hour } from "../../../utils/time";
 
 function toLocalYMD(dateStr: string | Date) {
   const d = new Date(dateStr);
@@ -48,10 +49,8 @@ export default function HistoryLogScreen() {
   const today = new Date();
   const [selectedFilter, setSelectedFilter] = useState("all");
 
-  const { logs, getMonthlyMedicineLogs, loading, error } =
+  const { monthlyLogs, getMonthlyMedicineLogs, loading, error } =
     useMedicineLogStore();
-
-  console.log(logs, "medicine month logs");
 
   // Fetch this month's logs on mount
   useEffect(() => {
@@ -62,7 +61,7 @@ export default function HistoryLogScreen() {
   const todayYMD = toLocalYMD(today);
 
   // Safely transform and filter logs
-  const pastAndPresentLogs = (Array.isArray(logs) ? logs : [])
+  const pastAndPresentLogs = (Array.isArray(monthlyLogs) ? monthlyLogs : [])
     .map((log: MedicineLog) => {
       // Assuming the log from the backend might contain the full medication object
       const enrichedLog = log as any;
@@ -114,10 +113,13 @@ export default function HistoryLogScreen() {
             time: log.medication.times?.join(", ") || "N/A",
             status,
             timestamp: log.timeTaken
-              ? new Date(log.timeTaken).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
+              ? formatTime12Hour(
+                  new Date(log.timeTaken).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  })
+                )
               : null,
             color: log.medication.color,
           };

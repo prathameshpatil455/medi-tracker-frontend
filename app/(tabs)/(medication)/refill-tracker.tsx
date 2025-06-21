@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,41 +10,23 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-
-// Sample refill data
-const SAMPLE_REFILLS = [
-  {
-    id: "1",
-    name: "Aspirin",
-    remainingPills: 15,
-    totalPills: 30,
-    refillDate: "2024-02-15",
-    isUrgent: false,
-    color: "#4CAF50",
-  },
-  {
-    id: "2",
-    name: "Vitamin D",
-    remainingPills: 28,
-    totalPills: 30,
-    refillDate: "2024-03-01",
-    isUrgent: false,
-    color: "#2196F3",
-  },
-  {
-    id: "3",
-    name: "Metformin",
-    remainingPills: 8,
-    totalPills: 30,
-    refillDate: "2024-02-20",
-    isUrgent: true,
-    color: "#FF9800",
-  },
-];
+import { useMedicationStore } from "../../../store/medication";
 
 export default function RefillTrackerScreen() {
   const router = useRouter();
-  const [refills, setRefills] = useState(SAMPLE_REFILLS);
+  const {
+    medications: refills,
+    fetchRefillWarnings,
+    loading,
+    error,
+  } = useMedicationStore();
+
+  useEffect(() => {
+    console.log("am i being called");
+    fetchRefillWarnings();
+  }, []);
+
+  console.log(refills, "check daat");
 
   const handleRefillNow = (medication: any) => {
     Alert.alert("Refill Medication", `Mark ${medication.name} as refilled?`, [
@@ -52,14 +34,9 @@ export default function RefillTrackerScreen() {
       {
         text: "Refill",
         onPress: () => {
-          setRefills(
-            refills.map((r) =>
-              r.id === medication.id
-                ? { ...r, remainingPills: r.totalPills, isUrgent: false }
-                : r
-            )
-          );
+          // In a real app, you would call an API to update the refill status
           Alert.alert("Refilled", `${medication.name} has been refilled.`);
+          fetchRefillWarnings(); // Refetch to update the list
         },
       },
     ]);
@@ -121,11 +98,15 @@ export default function RefillTrackerScreen() {
                 <View style={styles.medicationInfo}>
                   <Text style={styles.medicationName}>{medication.name}</Text>
                   <Text style={styles.pillsInfo}>
-                    {medication.remainingPills} of {medication.totalPills} pills
-                    remaining
+                    {medication.tabletCount} pills remaining
                   </Text>
                   <Text style={styles.refillDate}>
-                    Refill by: {medication.refillDate}
+                    Refill by:{" "}
+                    {new Date(
+                      new Date().setDate(
+                        new Date().getDate() + medication.daysLeft
+                      )
+                    ).toLocaleDateString()}
                   </Text>
                 </View>
                 <View style={styles.actionButtons}>
@@ -163,11 +144,15 @@ export default function RefillTrackerScreen() {
               <View style={styles.medicationInfo}>
                 <Text style={styles.medicationName}>{medication.name}</Text>
                 <Text style={styles.pillsInfo}>
-                  {medication.remainingPills} of {medication.totalPills} pills
-                  remaining
+                  {medication.tabletCount} pills remaining
                 </Text>
                 <Text style={styles.refillDate}>
-                  Refill by: {medication.refillDate}
+                  Refill by:{" "}
+                  {new Date(
+                    new Date().setDate(
+                      new Date().getDate() + medication.daysLeft
+                    )
+                  ).toLocaleDateString()}
                 </Text>
               </View>
               <View style={styles.actionButtons}>
