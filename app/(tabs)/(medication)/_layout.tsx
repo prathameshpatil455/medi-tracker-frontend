@@ -2,7 +2,7 @@ import { Stack } from "expo-router";
 
 export default function MedicationLayout() {
   return (
-    <Stack>
+    <Stack initialRouteName="index">
       <Stack.Screen
         name="index"
         options={{

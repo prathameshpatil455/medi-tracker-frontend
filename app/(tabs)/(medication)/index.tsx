@@ -25,13 +25,13 @@ function getWeekdayNames(days: number[]) {
 
 export default function MedicationScreen() {
   const router = useRouter();
-  const { medications, fetchMedications, deleteMedication, loading, error } =
+  const { allMedications, fetchMedications, deleteMedication, loading, error } =
     useMedicationStore();
 
   const [selectedMedication, setSelectedMedication] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  console.log(medications, "check them");
+  console.log(allMedications, "check them");
 
   useEffect(() => {
     fetchMedications();
@@ -54,7 +54,7 @@ export default function MedicationScreen() {
   const handleEditMedication = (medication: any) => {
     router.push({
       pathname: "/(tabs)/(medication)/add-medication",
-      params: { id: medication.id },
+      params: { id: medication._id },
     });
   };
 
@@ -243,7 +243,7 @@ export default function MedicationScreen() {
             <Text>Loading...</Text>
           ) : error ? (
             <Text style={{ color: "red" }}>{error}</Text>
-          ) : medications.length === 0 ? (
+          ) : allMedications.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="medical-outline" size={48} color="#ccc" />
               <Text style={styles.emptyStateText}>
@@ -260,7 +260,7 @@ export default function MedicationScreen() {
             </View>
           ) : (
             <FlatList
-              data={medications}
+              data={allMedications}
               renderItem={renderMedication}
               keyExtractor={(item) => item.id}
               contentContainerStyle={{ paddingBottom: 120 }}

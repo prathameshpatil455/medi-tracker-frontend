@@ -1,6 +1,6 @@
 import React from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, Tabs } from "expo-router";
+import { Link, Tabs, useRouter } from "expo-router";
 import { Pressable } from "react-native";
 
 import Colors from "@/constants/Colors";
@@ -17,6 +17,7 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const router = useRouter();
 
   return (
     <Tabs
@@ -51,6 +52,13 @@ export default function TabLayout() {
             <Ionicons name="medical" size={size} color={color} />
           ),
         }}
+        listeners={() => ({
+          tabPress: (e) => {
+            // Prevent default behavior and navigate to index
+            e.preventDefault();
+            router.push("/(tabs)/(medication)");
+          },
+        })}
       />
       <Tabs.Screen
         name="profile"

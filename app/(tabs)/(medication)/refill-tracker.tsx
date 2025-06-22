@@ -14,53 +14,21 @@ import { useMedicationStore } from "../../../store/medication";
 
 export default function RefillTrackerScreen() {
   const router = useRouter();
-  const {
-    medications: refills,
-    fetchRefillWarnings,
-    loading,
-    error,
-  } = useMedicationStore();
+  const { refillWarnings, fetchRefillWarnings, loading, error } =
+    useMedicationStore();
+
+  console.log(refillWarnings, "check refill");
 
   useEffect(() => {
-    console.log("am i being called");
     fetchRefillWarnings();
   }, []);
 
-  console.log(refills, "check daat");
-
   const handleRefillNow = (medication: any) => {
-    Alert.alert("Refill Medication", `Mark ${medication.name} as refilled?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Refill",
-        onPress: () => {
-          // In a real app, you would call an API to update the refill status
-          Alert.alert("Refilled", `${medication.name} has been refilled.`);
-          fetchRefillWarnings(); // Refetch to update the list
-        },
-      },
-    ]);
+    router.push({
+      pathname: "/(tabs)/(medication)/add-medication",
+      params: { id: medication.medicineId },
+    });
   };
-
-  const handleUpdatePills = (medication: any) => {
-    Alert.alert(
-      "Update Pills",
-      `Update remaining pills for ${medication.name}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Update",
-          onPress: () => {
-            // In a real app, you'd show a number input
-            Alert.alert("Updated", "Pills count updated.");
-          },
-        },
-      ]
-    );
-  };
-
-  const urgentRefills = refills.filter((r) => r.isUrgent);
-  const normalRefills = refills.filter((r) => !r.isUrgent);
 
   return (
     <View style={styles.container}>
@@ -78,68 +46,21 @@ export default function RefillTrackerScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Urgent Refills */}
-        {urgentRefills.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="warning" size={20} color="#FF5722" />
-              <Text style={styles.urgentTitle}>Urgent Refills</Text>
-            </View>
-            {urgentRefills.map((medication) => (
-              <View key={medication.id} style={styles.refillCard}>
-                <View
-                  style={[
-                    styles.medicationBadge,
-                    { backgroundColor: `${medication.color}15` },
-                  ]}
-                >
-                  <Ionicons name="medical" size={24} color={medication.color} />
-                </View>
-                <View style={styles.medicationInfo}>
-                  <Text style={styles.medicationName}>{medication.name}</Text>
-                  <Text style={styles.pillsInfo}>
-                    {medication.tabletCount} pills remaining
-                  </Text>
-                  <Text style={styles.refillDate}>
-                    Refill by:{" "}
-                    {new Date(
-                      new Date().setDate(
-                        new Date().getDate() + medication.daysLeft
-                      )
-                    ).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={styles.updateButton}
-                    onPress={() => handleUpdatePills(medication)}
-                  >
-                    <Ionicons name="pencil" size={16} color="#2196F3" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.refillButton}
-                    onPress={() => handleRefillNow(medication)}
-                  >
-                    <Text style={styles.refillButtonText}>Refill</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Normal Refills */}
+        {/* All Refills */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>All Medications</Text>
-          {normalRefills.map((medication) => (
-            <View key={medication.id} style={styles.refillCard}>
+          <Text style={styles.sectionTitle}>Medications to Refill</Text>
+          {refillWarnings.map((medication, index) => (
+            <View
+              key={`refill-${(medication as any).medicineId || index}`}
+              style={styles.refillCard}
+            >
               <View
                 style={[
                   styles.medicationBadge,
-                  { backgroundColor: `${medication.color}15` },
+                  { backgroundColor: "#4CAF5015" },
                 ]}
               >
-                <Ionicons name="medical" size={24} color={medication.color} />
+                <Ionicons name="medical" size={24} color="#4CAF50" />
               </View>
               <View style={styles.medicationInfo}>
                 <Text style={styles.medicationName}>{medication.name}</Text>
@@ -150,18 +71,12 @@ export default function RefillTrackerScreen() {
                   Refill by:{" "}
                   {new Date(
                     new Date().setDate(
-                      new Date().getDate() + medication.daysLeft
+                      new Date().getDate() + (medication.daysLeft || 0)
                     )
                   ).toLocaleDateString()}
                 </Text>
               </View>
               <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={styles.updateButton}
-                  onPress={() => handleUpdatePills(medication)}
-                >
-                  <Ionicons name="pencil" size={16} color="#2196F3" />
-                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.refillButton}
                   onPress={() => handleRefillNow(medication)}
@@ -173,7 +88,7 @@ export default function RefillTrackerScreen() {
           ))}
         </View>
 
-        {refills.length === 0 && (
+        {refillWarnings.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="medical-outline" size={48} color="#ccc" />
             <Text style={styles.emptyStateText}>No medications to track</Text>
@@ -282,11 +197,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  updateButton: {
-    padding: 8,
-    backgroundColor: "#E3F2FD",
-    borderRadius: 8,
   },
   refillButton: {
     backgroundColor: "#4CAF50",

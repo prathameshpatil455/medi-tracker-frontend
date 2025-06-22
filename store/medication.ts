@@ -6,11 +6,16 @@ export interface Medication {
   id: string;
   name: string;
   dosage: string;
+  frequencyPerDay?: number;
   times: string[];
   startDate: string;
+  endDate?: string;
+  daysOfWeek?: number[];
   duration: string;
   color: string;
   reminderEnabled: boolean;
+  refillReminder?: boolean;
+  notes?: string;
   isUrgent?: boolean;
   remainingPills?: number;
   totalPills?: number;
@@ -21,7 +26,12 @@ export interface Medication {
 }
 
 interface MedicationStore {
-  medications: Medication[];
+  allMedications: Medication[];
+  todaysMedications: Medication[];
+  monthlyMedications: Medication[];
+  upcomingMedications: Medication[];
+  refillWarnings: Medication[];
+  progressSummary: Medication[];
   loading: boolean;
   error: string | null;
   fetchMedications: () => Promise<void>;
@@ -39,7 +49,12 @@ interface MedicationStore {
 }
 
 export const useMedicationStore = create<MedicationStore>((set) => ({
-  medications: [],
+  allMedications: [],
+  todaysMedications: [],
+  monthlyMedications: [],
+  upcomingMedications: [],
+  refillWarnings: [],
+  progressSummary: [],
   loading: false,
   error: null,
 
@@ -47,7 +62,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_ALL);
-      set({ medications: res.data, loading: false });
+      set({ allMedications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -57,7 +72,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_TODAY);
-      set({ medications: res.data, loading: false });
+      set({ todaysMedications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -69,7 +84,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
       const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_MONTHLY, {
         params: { year, month },
       });
-      set({ medications: res.data, loading: false });
+      set({ monthlyMedications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -79,7 +94,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const res = await axiosInstance.get(ENDPOINTS.MEDICINE.GET_UPCOMING);
-      set({ medications: res.data, loading: false });
+      set({ upcomingMedications: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -91,7 +106,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
       const res = await axiosInstance.get(
         ENDPOINTS.MEDICINE.GET_REFILL_WARNING
       );
-      set({ medications: res.data, loading: false });
+      set({ refillWarnings: res.data, loading: false });
     } catch (error: any) {
       set({ error: error.message, loading: false });
     }
@@ -103,7 +118,7 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
       const res = await axiosInstance.get(
         ENDPOINTS.MEDICINE.GET_PROGRESS_SUMMARY
       );
-      set({ loading: false });
+      set({ progressSummary: res.data, loading: false });
       return res.data;
     } catch (error: any) {
       set({ error: error.message, loading: false });
@@ -119,7 +134,8 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
         medication
       );
       set((state) => ({
-        medications: [...state.medications, res.data],
+        ...state,
+        allMedications: [...state.allMedications, res.data],
         loading: false,
       }));
     } catch (error: any) {
@@ -135,7 +151,10 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
         medication
       );
       set((state) => ({
-        medications: state.medications.map((m) => (m.id === id ? res.data : m)),
+        ...state,
+        allMedications: state.allMedications.map((m: Medication) =>
+          m.id === id ? res.data : m
+        ),
         loading: false,
       }));
     } catch (error: any) {
@@ -148,7 +167,10 @@ export const useMedicationStore = create<MedicationStore>((set) => ({
     try {
       await axiosInstance.delete(`${ENDPOINTS.MEDICINE.ADD_MEDICINE}/${id}`);
       set((state) => ({
-        medications: state.medications.filter((m) => m.id !== id),
+        ...state,
+        allMedications: state.allMedications.filter(
+          (m: Medication) => m.id !== id
+        ),
         loading: false,
       }));
     } catch (error: any) {

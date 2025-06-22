@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   KeyboardAvoidingView,
   Alert,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,7 +25,7 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const FREQUENCY_TYPES = [
   { id: "daily", label: "Daily" },
-  { id: "weekly", label: "Weekly (choose days)" },
+  { id: "weekly", label: "Weekly" },
 ];
 
 const DURATIONS = [
@@ -37,9 +37,18 @@ const DURATIONS = [
 
 export default function AddMedicationScreen() {
   const router = useRouter();
-  const addMedication = useMedicationStore((state) => state.addMedication);
-  const loading = useMedicationStore((state) => state.loading);
-  const error = useMedicationStore((state) => state.error);
+  const params = useLocalSearchParams();
+  const medicationId = params.id as string;
+  const isEditMode = !!medicationId;
+
+  const {
+    addMedication,
+    updateMedication,
+    allMedications,
+    fetchMedications,
+    loading,
+    error,
+  } = useMedicationStore();
   const [form, setForm] = useState({
     name: "",
     dosage: "",
@@ -66,12 +75,79 @@ export default function AddMedicationScreen() {
   const [selectedDuration, setSelectedDuration] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Fetch medications on mount
+  useEffect(() => {
+    fetchMedications();
+  }, [fetchMedications]);
+
+  // Load medication data for editing
+  useEffect(() => {
+    if (isEditMode && allMedications.length > 0) {
+      const medication = allMedications.find(
+        (med: any) => med._id === medicationId
+      );
+      if (medication) {
+        // Determine frequency type based on daysOfWeek
+        const isDaily =
+          medication.daysOfWeek && medication.daysOfWeek.length === 7;
+        const frequencyType = isDaily ? "daily" : "weekly";
+
+        setForm({
+          name: medication.name || "",
+          dosage: medication.dosage || "",
+          frequencyType,
+          weeklyDays: medication.daysOfWeek || [],
+          startDate: medication.startDate
+            ? new Date(medication.startDate)
+            : new Date(),
+          endDate: medication.endDate ? new Date(medication.endDate) : null,
+          timesPerDay: medication.frequencyPerDay || 1,
+          times: medication.times || ["09:00"],
+          notes: medication.notes || "",
+          reminderEnabled: medication.reminderEnabled ?? true,
+          refillReminder: medication.refillReminder ?? false,
+          currentSupply: medication.tabletCount?.toString() || "",
+        });
+        setSelectedDuration(medication.duration || "");
+      }
+    }
+  }, [isEditMode, medicationId, allMedications]);
+
+  // Calculate duration when start and end dates change
+  useEffect(() => {
+    if (form.startDate && form.endDate) {
+      const diffTime = Math.abs(
+        form.endDate.getTime() - form.startDate.getTime()
+      );
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // Find the closest duration option
+      const durationOption =
+        DURATIONS.find((dur) => dur.value === diffDays) ||
+        DURATIONS.find((dur) => dur.value > diffDays) ||
+        DURATIONS[DURATIONS.length - 1];
+
+      if (durationOption) {
+        setSelectedDuration(durationOption.label);
+      }
+    }
+  }, [form.startDate, form.endDate]);
+
+  // Update frequency type when weekly days change
+  useEffect(() => {
+    if (form.weeklyDays.length === 7) {
+      setForm((prev) => ({ ...prev, frequencyType: "daily" }));
+    } else if (form.weeklyDays.length > 0) {
+      setForm((prev) => ({ ...prev, frequencyType: "weekly" }));
+    }
+  }, [form.weeklyDays]);
+
   // Frequency UI logic
   const handleFrequencyTypeChange = (type: string) => {
     setForm((prev) => ({
       ...prev,
       frequencyType: type,
-      weeklyDays: type === "weekly" ? [] : prev.weeklyDays,
+      weeklyDays: type === "daily" ? [0, 1, 2, 3, 4, 5, 6] : prev.weeklyDays,
     }));
   };
 
@@ -80,7 +156,11 @@ export default function AddMedicationScreen() {
       const days = prev.weeklyDays.includes(dayIdx)
         ? prev.weeklyDays.filter((d) => d !== dayIdx)
         : [...prev.weeklyDays, dayIdx];
-      return { ...prev, weeklyDays: days };
+
+      // Sort the days to maintain order
+      const sortedDays = days.sort((a, b) => a - b);
+
+      return { ...prev, weeklyDays: sortedDays };
     });
   };
 
@@ -156,21 +236,41 @@ export default function AddMedicationScreen() {
     setIsSubmitting(true);
     try {
       const medicationData = {
-        ...form,
-        startDate: form.startDate.toISOString(),
-        endDate: form.endDate ? form.endDate.toISOString() : null,
+        name: form.name,
+        dosage: form.dosage,
+        frequencyPerDay: form.timesPerDay,
         times: form.times,
-        color: "#4CAF50", // Or generate a random color if needed
+        startDate: form.startDate.toISOString(),
+        endDate: form.endDate ? form.endDate.toISOString() : undefined,
+        daysOfWeek:
+          form.frequencyType === "weekly"
+            ? form.weeklyDays
+            : [0, 1, 2, 3, 4, 5, 6],
+        notes: form.notes,
+        tabletCount: Number(form.currentSupply),
+        refillReminder: form.refillReminder,
+        reminderEnabled: form.reminderEnabled,
         duration: selectedDuration,
+        color: "#4CAF50",
       };
-      console.log(form, "check the submitted values");
-      // await addMedication(medicationData);
-      Alert.alert("Success", "Medication added successfully", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
+      console.log(medicationData, "check the submitted values");
+      if (isEditMode) {
+        await updateMedication(medicationId, medicationData);
+        Alert.alert("Success", "Medication updated successfully", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+      } else {
+        await addMedication(medicationData);
+        Alert.alert("Success", "Medication added successfully", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+      }
     } catch (e) {
       Alert.alert("Error", "Failed to save medication. Please try again.");
     } finally {
@@ -355,12 +455,14 @@ export default function AddMedicationScreen() {
       <View style={styles.content}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
             style={styles.backButton}
+            onPress={() => router.back()}
           >
-            <Ionicons name="chevron-back" size={28} color="#1a8e2d" />
+            <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Medication</Text>
+          <Text style={styles.headerTitle}>
+            {isEditMode ? "Edit Medication" : "New Medication"}
+          </Text>
         </View>
 
         <ScrollView
@@ -370,10 +472,11 @@ export default function AddMedicationScreen() {
         >
           {/* Basic Information */}
           <View style={styles.section}>
+            <Text style={styles.fieldLabel}>Medication Name *</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={[styles.mainInput, errors.name && styles.inputError]}
-                placeholder="Medication Name"
+                placeholder="Enter medication name"
                 placeholderTextColor="#999"
                 value={form.name}
                 onChangeText={(text) => {
@@ -387,10 +490,12 @@ export default function AddMedicationScreen() {
                 <Text style={styles.errorText}>{errors.name}</Text>
               )}
             </View>
+
+            <Text style={styles.fieldLabel}>Dosage (Optional)</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={[styles.mainInput, errors.dosage && styles.inputError]}
-                placeholder="Dosage (e.g., 500mg)"
+                placeholder="e.g., 500mg, 1 tablet"
                 placeholderTextColor="#999"
                 value={form.dosage}
                 onChangeText={(text) => {
@@ -460,13 +565,14 @@ export default function AddMedicationScreen() {
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.fieldLabel}>Current Supply *</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={[
                   styles.mainInput,
                   errors.currentSupply && styles.inputError,
                 ]}
-                placeholder="Current Supply (e.g., 30 pills)"
+                placeholder="e.g., 30 pills, 60 tablets"
                 placeholderTextColor="#999"
                 value={form.currentSupply}
                 onChangeText={(text) => {
@@ -494,7 +600,7 @@ export default function AddMedicationScreen() {
                   <View style={styles.iconContainer}>
                     <Ionicons name="notifications" size={20} color="#1a8e2d" />
                   </View>
-                  <View>
+                  <View style={styles.switchTextContainer}>
                     <Text style={styles.switchLabel}>Reminders</Text>
                     <Text style={styles.switchSubLabel}>
                       Get notified when it's time to take your medication
@@ -521,7 +627,7 @@ export default function AddMedicationScreen() {
                   <View style={styles.iconContainer}>
                     <Ionicons name="reload" size={20} color="#1a8e2d" />
                   </View>
-                  <View>
+                  <View style={styles.switchTextContainer}>
                     <Text style={styles.switchLabel}>Refill Tracking</Text>
                     <Text style={styles.switchSubLabel}>
                       Get notified when you need to refill
@@ -542,6 +648,7 @@ export default function AddMedicationScreen() {
 
           {/* Notes */}
           <View style={styles.section}>
+            <Text style={styles.fieldLabel}>Notes (Optional)</Text>
             <View style={styles.textAreaContainer}>
               <TextInput
                 style={styles.textArea}
@@ -555,36 +662,43 @@ export default function AddMedicationScreen() {
               />
             </View>
           </View>
-        </ScrollView>
 
-        <View style={styles.footer}>
-          <TouchableOpacity
-            style={[
-              styles.saveButton,
-              isSubmitting && styles.saveButtonDisabled,
-            ]}
-            onPress={handleSave}
-            disabled={isSubmitting}
-          >
-            <LinearGradient
-              colors={["#1a8e2d", "#146922"]}
-              style={styles.saveButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => router.back()}
+              disabled={isSubmitting}
             >
-              <Text style={styles.saveButtonText}>
-                {isSubmitting ? "Adding..." : "Add Medication"}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => router.back()}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.saveButton,
+                isSubmitting && styles.saveButtonDisabled,
+              ]}
+              onPress={handleSave}
+              disabled={isSubmitting}
+            >
+              <LinearGradient
+                colors={["#1a8e2d", "#146922"]}
+                style={styles.saveButtonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text style={styles.saveButtonText}>
+                  {isSubmitting
+                    ? isEditMode
+                      ? "Updating..."
+                      : "Adding..."
+                    : isEditMode
+                    ? "Update Medication"
+                    : "Add Medication"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
       {/* DateTimePickers */}
       {showDatePicker.show && (
@@ -647,21 +761,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingVertical: 25,
     zIndex: 1,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "white",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
   },
   headerTitle: {
     fontSize: 28,
@@ -676,13 +782,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   section: {
-    marginBottom: 25,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#1a1a1a",
-    marginBottom: 15,
+    marginBottom: 8,
     marginTop: 10,
   },
   mainInput: {
@@ -816,6 +922,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 15,
   },
+  switchTextContainer: {
+    flex: 1,
+    paddingRight: 20,
+  },
   switchLabel: {
     fontSize: 16,
     fontWeight: "600",
@@ -856,28 +966,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
   },
-  footer: {
-    padding: 20,
-    backgroundColor: "white",
-    borderTopWidth: 1,
-    borderTopColor: "#e0e0e0",
-  },
-  saveButton: {
-    borderRadius: 16,
-    overflow: "hidden",
-    marginBottom: 12,
-  },
-  saveButtonGradient: {
-    paddingVertical: 15,
-    justifyContent: "center",
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-  },
-  saveButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "700",
+    paddingHorizontal: 0,
+    marginTop: 20,
+    gap: 12,
   },
   cancelButton: {
+    flex: 1,
     paddingVertical: 15,
     borderRadius: 16,
     borderWidth: 1,
@@ -903,8 +1001,20 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.7,
   },
-  refillInputs: {
-    marginTop: 15,
+  saveButton: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  saveButtonGradient: {
+    paddingVertical: 15,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  saveButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "700",
   },
   timesContainer: {
     marginTop: 20,
@@ -963,5 +1073,11 @@ const styles = StyleSheet.create({
   },
   selectedWeekdayText: {
     color: "white",
+  },
+  fieldLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 8,
   },
 });

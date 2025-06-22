@@ -99,7 +99,7 @@ export const useMedicineLogStore = create<MedicineLogStore>((set) => ({
   markMedicineAsTaken: async (logToTake) => {
     try {
       await axiosInstance.post(
-        `${ENDPOINTS.MEDICINE_LOGS.MARK_TAKEN}/${logToTake.medicineId}/mark-taken`,
+        `${ENDPOINTS.MEDICINE_LOGS.MARK_TAKEN}${logToTake.medicineId}/mark-taken`,
         { time: logToTake.scheduledTime }
       );
     } catch (error: any) {
